@@ -1,11 +1,11 @@
 import React, { Component } from "react";
 
 // Grid physics constants
-const MIN_VELOCITY = 0.2;
+const MIN_VELOCITY = 0.05;
 const UPDATE_INTERVAL = 16;
 const VELOCITY_HISTORY_SIZE = 5;
-const FRICTION = 0.9;
-const VELOCITY_THRESHOLD = 0.3;
+const FRICTION = 0.997; // Per-millisecond friction (applied as friction^deltaTime)
+const VELOCITY_SCALE = 16; // Scale px/ms velocity to px/frame at 60fps
 
 // Custom debounce implementation
 function debounce<T extends (...args: unknown[]) => unknown>(
@@ -123,6 +123,9 @@ class ThiingsGrid extends Component<ThiingsGridProps, State> {
   private isComponentMounted: boolean;
   private lastUpdateTime: number;
   private debouncedUpdateGridItems: ReturnType<typeof throttle>;
+  private cachedWidth: number;
+  private cachedHeight: number;
+  private lastGridCenter: Position;
 
   constructor(props: ThiingsGridProps) {
     super(props);
@@ -143,6 +146,9 @@ class ThiingsGrid extends Component<ThiingsGridProps, State> {
     this.animationFrame = null;
     this.isComponentMounted = false;
     this.lastUpdateTime = 0;
+    this.cachedWidth = 0;
+    this.cachedHeight = 0;
+    this.lastGridCenter = { x: Infinity, y: Infinity };
     this.debouncedUpdateGridItems = throttle(
       this.updateGridItems,
       UPDATE_INTERVAL,
@@ -155,6 +161,7 @@ class ThiingsGrid extends Component<ThiingsGridProps, State> {
 
   componentDidMount() {
     this.isComponentMounted = true;
+    this.cacheContainerSize();
     this.updateGridItems();
 
     // Add non-passive event listener
@@ -168,6 +175,8 @@ class ThiingsGrid extends Component<ThiingsGridProps, State> {
         { passive: false }
       );
     }
+
+    window.addEventListener("resize", this.handleResize);
   }
 
   componentWillUnmount() {
@@ -176,6 +185,9 @@ class ThiingsGrid extends Component<ThiingsGridProps, State> {
       cancelAnimationFrame(this.animationFrame);
     }
     this.debouncedUpdateGridItems.cancel();
+    this.debouncedStopMoving.cancel();
+
+    window.removeEventListener("resize", this.handleResize);
 
     // Remove event listeners
     if (this.containerRef.current) {
@@ -187,24 +199,45 @@ class ThiingsGrid extends Component<ThiingsGridProps, State> {
     }
   }
 
+  private cacheContainerSize = () => {
+    if (this.containerRef.current) {
+      const rect = this.containerRef.current.getBoundingClientRect();
+      this.cachedWidth = rect.width;
+      this.cachedHeight = rect.height;
+    }
+  };
+
+  private handleResize = () => {
+    this.cacheContainerSize();
+    this.lastGridCenter = { x: Infinity, y: Infinity }; // Force grid recalc
+    this.updateGridItems();
+  };
+
   public publicGetCurrentPosition = () => {
     return this.state.offset;
   };
 
-  private calculateVisiblePositions = (): Position[] => {
-    if (!this.containerRef.current) return [];
-
-    const rect = this.containerRef.current.getBoundingClientRect();
-    const width = rect.width;
-    const height = rect.height;
-
-    // Calculate grid cells needed to fill container
-    const cellsX = Math.ceil(width / this.props.gridSize);
-    const cellsY = Math.ceil(height / this.props.gridSize);
+  private calculateVisiblePositions = (): Position[] | null => {
+    const width = this.cachedWidth;
+    const height = this.cachedHeight;
+    if (width === 0 && height === 0) return null;
 
     // Calculate center position based on offset
     const centerX = -Math.round(this.state.offset.x / this.props.gridSize);
     const centerY = -Math.round(this.state.offset.y / this.props.gridSize);
+
+    // Skip recalculation if the grid center hasn't moved to a new cell
+    if (
+      centerX === this.lastGridCenter.x &&
+      centerY === this.lastGridCenter.y
+    ) {
+      return null; // Signal: no change
+    }
+    this.lastGridCenter = { x: centerX, y: centerY };
+
+    // Calculate grid cells needed to fill container
+    const cellsX = Math.ceil(width / this.props.gridSize);
+    const cellsY = Math.ceil(height / this.props.gridSize);
 
     const positions: Position[] = [];
     const halfCellsX = Math.ceil(cellsX / 2);
@@ -264,6 +297,20 @@ class ThiingsGrid extends Component<ThiingsGridProps, State> {
     if (!this.isComponentMounted) return;
 
     const positions = this.calculateVisiblePositions();
+    if (positions === null) {
+      // Grid center cell unchanged — skip expensive re-render
+      const distanceFromRest = getDistance(
+        this.state.offset,
+        this.state.restPos
+      );
+      const isMoving = distanceFromRest > 5;
+      if (isMoving !== this.state.isMoving) {
+        this.setState({ isMoving });
+      }
+      this.debouncedStopMoving();
+      return;
+    }
+
     const newItems = positions.map((position) => {
       const gridIndex = this.getItemIndexForPosition(position.x, position.y);
       return {
@@ -296,18 +343,17 @@ class ThiingsGrid extends Component<ThiingsGridProps, State> {
         return;
       }
 
-      // Apply non-linear deceleration based on speed
-      let deceleration = FRICTION;
-      if (speed < VELOCITY_THRESHOLD) {
-        // Apply stronger deceleration at lower speeds for more natural stopping
-        deceleration = FRICTION * (speed / VELOCITY_THRESHOLD);
-      }
+      // Time-based friction: friction^deltaTime gives frame-rate independence
+      const deceleration = Math.pow(FRICTION, deltaTime);
+
+      // Scale position change by deltaTime for smooth, frame-rate-independent motion
+      const dt = deltaTime / UPDATE_INTERVAL;
 
       this.setState(
         (prevState) => ({
           offset: {
-            x: prevState.offset.x + prevState.velocity.x,
-            y: prevState.offset.y + prevState.velocity.y,
+            x: prevState.offset.x + prevState.velocity.x * dt,
+            y: prevState.offset.y + prevState.velocity.y * dt,
           },
           velocity: {
             x: prevState.velocity.x * deceleration,
@@ -326,6 +372,7 @@ class ThiingsGrid extends Component<ThiingsGridProps, State> {
   private handleDown = (p: Position) => {
     if (this.animationFrame) {
       cancelAnimationFrame(this.animationFrame);
+      this.animationFrame = null;
     }
 
     this.setState({
@@ -335,6 +382,8 @@ class ThiingsGrid extends Component<ThiingsGridProps, State> {
         y: p.y - this.state.offset.y,
       },
       velocity: { x: 0, y: 0 },
+      velocityHistory: [],
+      lastMoveTime: performance.now(),
     });
 
     this.lastPos = { x: p.x, y: p.y };
@@ -357,14 +406,22 @@ class ThiingsGrid extends Component<ThiingsGridProps, State> {
       velocityHistory.shift();
     }
 
-    // Calculate smoothed velocity using moving average
+    // Calculate smoothed velocity using recency-weighted average
+    // More recent samples get exponentially higher weight
+    let totalWeight = 0;
     const smoothedVelocity = velocityHistory.reduce(
-      (acc, vel) => ({
-        x: acc.x + vel.x / velocityHistory.length,
-        y: acc.y + vel.y / velocityHistory.length,
-      }),
+      (acc, vel, i) => {
+        const weight = Math.pow(2, i); // 1, 2, 4, 8, 16...
+        totalWeight += weight;
+        return {
+          x: acc.x + vel.x * weight,
+          y: acc.y + vel.y * weight,
+        };
+      },
       { x: 0, y: 0 }
     );
+    smoothedVelocity.x /= totalWeight;
+    smoothedVelocity.y /= totalWeight;
 
     this.setState(
       {
@@ -382,7 +439,18 @@ class ThiingsGrid extends Component<ThiingsGridProps, State> {
     this.lastPos = { x: p.x, y: p.y };
   };
   private handleUp = () => {
-    this.setState({ isDragging: false });
+    // Discard velocity if the last move was too long ago (finger rested before release)
+    const timeSinceLastMove = performance.now() - this.state.lastMoveTime;
+    const velocity =
+      timeSinceLastMove > 100
+        ? { x: 0, y: 0 }
+        : {
+            x: this.state.velocity.x * VELOCITY_SCALE,
+            y: this.state.velocity.y * VELOCITY_SCALE,
+          };
+
+    this.lastUpdateTime = performance.now();
+    this.setState({ isDragging: false, velocity });
     this.animationFrame = requestAnimationFrame(this.animate);
   };
 
@@ -455,10 +523,8 @@ class ThiingsGrid extends Component<ThiingsGridProps, State> {
     const { offset, isDragging, gridItems, isMoving } = this.state;
     const { gridSize, className } = this.props;
 
-    // Get container dimensions
-    const containerRect = this.containerRef.current?.getBoundingClientRect();
-    const containerWidth = containerRect?.width || 0;
-    const containerHeight = containerRect?.height || 0;
+    const containerWidth = this.cachedWidth;
+    const containerHeight = this.cachedHeight;
 
     return (
       <div
@@ -505,7 +571,6 @@ class ThiingsGrid extends Component<ThiingsGridProps, State> {
                   transform: `translate3d(${x}px, ${y}px, 0)`,
                   marginLeft: `-${gridSize / 2}px`,
                   marginTop: `-${gridSize / 2}px`,
-                  willChange: "transform",
                 }}
               >
                 {this.props.renderItem({
