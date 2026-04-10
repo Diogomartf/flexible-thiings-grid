@@ -6,6 +6,7 @@ const UPDATE_INTERVAL = 16;
 const VELOCITY_HISTORY_SIZE = 5;
 const FRICTION = 0.997; // Per-millisecond friction (applied as friction^deltaTime)
 const VELOCITY_SCALE = 16; // Scale px/ms velocity to px/frame at 60fps
+const SPAN_OVERSCAN = 3; // Extra cells scanned beyond viewport edges for spanning cells
 
 // Custom debounce implementation
 function debounce<T extends (...args: unknown[]) => unknown>(
@@ -86,9 +87,13 @@ type Position = {
   y: number;
 };
 
+export type CellSpan = { colSpan: number; rowSpan: number };
+
 type GridItem = {
   position: Position;
   gridIndex: number;
+  colSpan: number;
+  rowSpan: number;
 };
 
 type State = {
@@ -107,6 +112,8 @@ export type ItemConfig = {
   isMoving: boolean;
   position: Position;
   gridIndex: number;
+  colSpan: number;
+  rowSpan: number;
 };
 
 export type ThiingsGridProps = {
@@ -114,6 +121,7 @@ export type ThiingsGridProps = {
   renderItem: (itemConfig: ItemConfig) => React.ReactNode;
   className?: string;
   initialPosition?: Position;
+  getSpan?: (position: Position) => CellSpan;
 };
 
 class ThiingsGrid extends Component<ThiingsGridProps, State> {
@@ -177,6 +185,13 @@ class ThiingsGrid extends Component<ThiingsGridProps, State> {
     }
 
     window.addEventListener("resize", this.handleResize);
+  }
+
+  componentDidUpdate(prevProps: ThiingsGridProps) {
+    if (prevProps.getSpan !== this.props.getSpan) {
+      this.lastGridCenter = { x: Infinity, y: Infinity };
+      this.updateGridItems();
+    }
   }
 
   componentWillUnmount() {
@@ -243,8 +258,8 @@ class ThiingsGrid extends Component<ThiingsGridProps, State> {
     const halfCellsX = Math.ceil(cellsX / 2);
     const halfCellsY = Math.ceil(cellsY / 2);
 
-    for (let y = centerY - halfCellsY; y <= centerY + halfCellsY; y++) {
-      for (let x = centerX - halfCellsX; x <= centerX + halfCellsX; x++) {
+    for (let y = centerY - halfCellsY - SPAN_OVERSCAN; y <= centerY + halfCellsY + SPAN_OVERSCAN; y++) {
+      for (let x = centerX - halfCellsX - SPAN_OVERSCAN; x <= centerX + halfCellsX + SPAN_OVERSCAN; x++) {
         positions.push({ x, y });
       }
     }
@@ -289,6 +304,17 @@ class ThiingsGrid extends Component<ThiingsGridProps, State> {
     return index;
   };
 
+  private getSpanForPosition = (position: Position): CellSpan => {
+    if (this.props.getSpan) {
+      const span = this.props.getSpan(position);
+      return {
+        colSpan: Math.min(Math.max(1, Math.floor(span.colSpan)), 20),
+        rowSpan: Math.min(Math.max(1, Math.floor(span.rowSpan)), 20),
+      };
+    }
+    return { colSpan: 1, rowSpan: 1 };
+  };
+
   private debouncedStopMoving = debounce(() => {
     this.setState({ isMoving: false, restPos: { ...this.state.offset } });
   }, 200);
@@ -311,13 +337,29 @@ class ThiingsGrid extends Component<ThiingsGridProps, State> {
       return;
     }
 
-    const newItems = positions.map((position) => {
+    // Pass 1: collect all positions covered by spanning cells (not anchors themselves).
+    // Positions are scanned row-by-row, left-to-right, so a top-left anchor is always
+    // processed before the cells it covers — first anchor in scan order wins.
+    const coveredSet = new Set<string>();
+    for (const position of positions) {
+      const { colSpan, rowSpan } = this.getSpanForPosition(position);
+      if (colSpan === 1 && rowSpan === 1) continue; // fast-path for default case
+      for (let dy = 0; dy < rowSpan; dy++) {
+        for (let dx = 0; dx < colSpan; dx++) {
+          if (dx === 0 && dy === 0) continue; // anchor itself is never covered
+          coveredSet.add(`${position.x + dx},${position.y + dy}`);
+        }
+      }
+    }
+
+    // Pass 2: build gridItems, skipping covered positions
+    const newItems: GridItem[] = [];
+    for (const position of positions) {
+      if (coveredSet.has(`${position.x},${position.y}`)) continue;
       const gridIndex = this.getItemIndexForPosition(position.x, position.y);
-      return {
-        position,
-        gridIndex,
-      };
-    });
+      const { colSpan, rowSpan } = this.getSpanForPosition(position);
+      newItems.push({ position, gridIndex, colSpan, rowSpan });
+    }
 
     const distanceFromRest = getDistance(this.state.offset, this.state.restPos);
 
@@ -556,6 +598,8 @@ class ThiingsGrid extends Component<ThiingsGridProps, State> {
           {gridItems.map((item) => {
             const x = item.position.x * gridSize + containerWidth / 2;
             const y = item.position.y * gridSize + containerHeight / 2;
+            const cellWidth = gridSize * item.colSpan;
+            const cellHeight = gridSize * item.rowSpan;
 
             return (
               <div
@@ -566,8 +610,8 @@ class ThiingsGrid extends Component<ThiingsGridProps, State> {
                   alignItems: "center",
                   justifyContent: "center",
                   userSelect: "none",
-                  width: gridSize,
-                  height: gridSize,
+                  width: cellWidth,
+                  height: cellHeight,
                   transform: `translate3d(${x}px, ${y}px, 0)`,
                   marginLeft: `-${gridSize / 2}px`,
                   marginTop: `-${gridSize / 2}px`,
@@ -577,6 +621,8 @@ class ThiingsGrid extends Component<ThiingsGridProps, State> {
                   gridIndex: item.gridIndex,
                   position: item.position,
                   isMoving,
+                  colSpan: item.colSpan,
+                  rowSpan: item.rowSpan,
                 })}
               </div>
             );
@@ -585,6 +631,23 @@ class ThiingsGrid extends Component<ThiingsGridProps, State> {
       </div>
     );
   }
+}
+
+/**
+ * Returns the colSpan needed to fit an image of the given natural width
+ * within a grid of the given cell size. Uses Math.round so a 150px image
+ * on a 100px grid maps to colSpan 2 rather than always rounding up.
+ */
+export function colSpanForWidth(naturalWidth: number, gridSize: number): number {
+  return Math.max(1, Math.round(naturalWidth / gridSize));
+}
+
+/**
+ * Returns the rowSpan needed to fit an image of the given natural height
+ * within a grid of the given cell size.
+ */
+export function rowSpanForHeight(naturalHeight: number, gridSize: number): number {
+  return Math.max(1, Math.round(naturalHeight / gridSize));
 }
 
 export default ThiingsGrid;

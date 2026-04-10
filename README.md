@@ -18,6 +18,7 @@ A high-performance, infinite scrolling grid component for React that provides sm
 - ♾️ **Infinite Grid**: Supports unlimited grid sizes with efficient rendering
 - 🎨 **Custom Renderers**: Flexible cell rendering with your own components
 - 🔧 **TypeScript Support**: Full type safety with comprehensive TypeScript definitions
+- 📐 **Variable Cell Sizes**: Cells can span multiple columns and/or rows for rich layouts
 
 ## 🚀 Quick Start
 
@@ -63,6 +64,7 @@ const App = () => (
 | `renderItem` | `(config: ItemConfig) => ReactNode` | ✅ | - | Function to render each grid cell |
 | `className` | `string` | ❌ | - | CSS class name for the container |
 | `initialPosition` | `Position` | ❌ | `{ x: 0, y: 0 }` | Initial scroll position |
+| `getSpan` | `(position: Position) => CellSpan` | ❌ | `() => ({ colSpan: 1, rowSpan: 1 })` | Returns how many columns and rows a cell at the given grid position should span |
 
 ### ItemConfig
 
@@ -73,6 +75,17 @@ The `renderItem` function receives an `ItemConfig` object with:
 | `gridIndex` | `number` | Unique index for the grid cell |
 | `position` | `Position` | Grid coordinates `{ x: number, y: number }` |
 | `isMoving` | `boolean` | Whether the grid is currently being moved/scrolled |
+| `colSpan` | `number` | Number of columns this cell spans (≥ 1) |
+| `rowSpan` | `number` | Number of rows this cell spans (≥ 1) |
+
+### CellSpan
+
+```tsx
+type CellSpan = {
+  colSpan: number; // columns to span rightward (≥ 1)
+  rowSpan: number; // rows to span downward (≥ 1)
+};
+```
 
 ### Position
 
@@ -81,6 +94,19 @@ type Position = {
   x: number;
   y: number;
 };
+```
+
+### Utility Functions
+
+```tsx
+import { colSpanForWidth, rowSpanForHeight } from './ThiingsGrid';
+
+// Returns the colSpan that best fits an image of naturalWidth pixels
+// within a grid cell of gridSize pixels (uses Math.round)
+colSpanForWidth(naturalWidth: number, gridSize: number): number
+
+// Returns the rowSpan that best fits an image of naturalHeight pixels
+rowSpanForHeight(naturalHeight: number, gridSize: number): number
 ```
 
 ## 🎨 Examples
@@ -152,6 +178,67 @@ export const CardLayout = () => (
   />
 );
 ```
+
+### Variable Cell Sizes
+
+Cells can span multiple columns and/or rows via the `getSpan` prop. Spans grow rightward (+x) and downward (+y) from the anchor cell. Cells covered by a spanning neighbour are automatically suppressed.
+
+```tsx
+import ThiingsGrid, {
+  type ItemConfig,
+  type CellSpan,
+  colSpanForWidth,
+  rowSpanForHeight,
+} from "./ThiingsGrid";
+
+// Pre-compute spans from static image metadata
+const GRID_SIZE = 100;
+const images = [
+  { src: "/img/wide.jpg",   width: 320, height: 180 }, // landscape → 3×2
+  { src: "/img/square.jpg", width: 100, height: 100 }, // square    → 1×1
+  { src: "/img/tall.jpg",   width: 100, height: 220 }, // portrait  → 1×2
+  // ...up to 30 images
+];
+
+const SPANS: CellSpan[] = images.map(({ width, height }) => ({
+  colSpan: colSpanForWidth(width, GRID_SIZE),
+  rowSpan: rowSpanForHeight(height, GRID_SIZE),
+}));
+
+const ImageCell = ({ gridIndex, colSpan, rowSpan }: ItemConfig) => {
+  const img = images[gridIndex % images.length];
+  return (
+    <div className="absolute inset-1 overflow-hidden rounded-lg">
+      <img
+        src={img.src}
+        className="w-full h-full object-cover"
+        draggable={false}
+      />
+      <div className="absolute bottom-1 right-1 text-[9px] text-white/70">
+        {colSpan}×{rowSpan}
+      </div>
+    </div>
+  );
+};
+
+export const VariableGrid = () => (
+  <ThiingsGrid
+    gridSize={GRID_SIZE}
+    getSpan={(pos) => {
+      const idx = /* your index fn */(pos.x, pos.y) % images.length;
+      return SPANS[idx];
+    }}
+    renderItem={ImageCell}
+  />
+);
+```
+
+#### Span rules
+
+- **Direction**: spans extend rightward (`colSpan`) and downward (`rowSpan`) from the anchor position
+- **Conflicts**: if two spans overlap, the top-left anchor (earlier in left-to-right, top-down scan order) wins
+- **Max span**: clamped internally to 20 in each direction
+- **Default**: when `getSpan` is omitted, all cells are 1×1 — identical behaviour to before
 
 ## 🎯 Best Practices
 
