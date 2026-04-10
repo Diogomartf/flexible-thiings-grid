@@ -82,7 +82,7 @@ function getDistance(p1: Position, p2: Position) {
   return Math.sqrt(dx * dx + dy * dy);
 }
 
-type Position = {
+export type Position = {
   x: number;
   y: number;
 };
@@ -134,6 +134,7 @@ class ThiingsGrid extends Component<ThiingsGridProps, State> {
   private cachedWidth: number;
   private cachedHeight: number;
   private lastGridCenter: Position;
+  private maxObservedSpan: number;
 
   constructor(props: ThiingsGridProps) {
     super(props);
@@ -157,6 +158,7 @@ class ThiingsGrid extends Component<ThiingsGridProps, State> {
     this.cachedWidth = 0;
     this.cachedHeight = 0;
     this.lastGridCenter = { x: Infinity, y: Infinity };
+    this.maxObservedSpan = 1;
     this.debouncedUpdateGridItems = throttle(
       this.updateGridItems,
       UPDATE_INTERVAL,
@@ -189,6 +191,7 @@ class ThiingsGrid extends Component<ThiingsGridProps, State> {
 
   componentDidUpdate(prevProps: ThiingsGridProps) {
     if (prevProps.getSpan !== this.props.getSpan) {
+      this.maxObservedSpan = 1; // reset so overscan re-calibrates for new getSpan
       this.lastGridCenter = { x: Infinity, y: Infinity };
       this.updateGridItems();
     }
@@ -258,8 +261,14 @@ class ThiingsGrid extends Component<ThiingsGridProps, State> {
     const halfCellsX = Math.ceil(cellsX / 2);
     const halfCellsY = Math.ceil(cellsY / 2);
 
-    for (let y = centerY - halfCellsY - SPAN_OVERSCAN; y <= centerY + halfCellsY + SPAN_OVERSCAN; y++) {
-      for (let x = centerX - halfCellsX - SPAN_OVERSCAN; x <= centerX + halfCellsX + SPAN_OVERSCAN; x++) {
+    // Skip overscan entirely when getSpan is not provided (no spanning cells possible).
+    // When getSpan is provided, use at least SPAN_OVERSCAN and grow with observed spans.
+    const overscan = this.props.getSpan
+      ? Math.max(SPAN_OVERSCAN, this.maxObservedSpan - 1)
+      : 0;
+
+    for (let y = centerY - halfCellsY - overscan; y <= centerY + halfCellsY + overscan; y++) {
+      for (let x = centerX - halfCellsX - overscan; x <= centerX + halfCellsX + overscan; x++) {
         positions.push({ x, y });
       }
     }
@@ -337,12 +346,22 @@ class ThiingsGrid extends Component<ThiingsGridProps, State> {
       return;
     }
 
-    // Pass 1: collect all positions covered by spanning cells (not anchors themselves).
+    // Pass 1: resolve spans once per position, build covered-cell set, and track max span.
     // Positions are scanned row-by-row, left-to-right, so a top-left anchor is always
     // processed before the cells it covers — first anchor in scan order wins.
+    const spanCache = new Map<string, CellSpan>();
     const coveredSet = new Set<string>();
+    let maxSpanSeen = 1;
+
     for (const position of positions) {
-      const { colSpan, rowSpan } = this.getSpanForPosition(position);
+      const key = `${position.x},${position.y}`;
+      const span = this.getSpanForPosition(position);
+      spanCache.set(key, span);
+
+      const { colSpan, rowSpan } = span;
+      const localMax = Math.max(colSpan, rowSpan);
+      if (localMax > maxSpanSeen) maxSpanSeen = localMax;
+
       if (colSpan === 1 && rowSpan === 1) continue; // fast-path for default case
       for (let dy = 0; dy < rowSpan; dy++) {
         for (let dx = 0; dx < colSpan; dx++) {
@@ -352,12 +371,19 @@ class ThiingsGrid extends Component<ThiingsGridProps, State> {
       }
     }
 
-    // Pass 2: build gridItems, skipping covered positions
+    // If a larger span was seen, expand overscan for the next recalculation.
+    if (maxSpanSeen > this.maxObservedSpan) {
+      this.maxObservedSpan = maxSpanSeen;
+      this.lastGridCenter = { x: Infinity, y: Infinity }; // force rescan with wider overscan
+    }
+
+    // Pass 2: build gridItems, skipping covered positions. Reuse cached spans.
     const newItems: GridItem[] = [];
     for (const position of positions) {
-      if (coveredSet.has(`${position.x},${position.y}`)) continue;
+      const key = `${position.x},${position.y}`;
+      if (coveredSet.has(key)) continue;
       const gridIndex = this.getItemIndexForPosition(position.x, position.y);
-      const { colSpan, rowSpan } = this.getSpanForPosition(position);
+      const { colSpan, rowSpan } = spanCache.get(key)!;
       newItems.push({ position, gridIndex, colSpan, rowSpan });
     }
 
@@ -639,6 +665,7 @@ class ThiingsGrid extends Component<ThiingsGridProps, State> {
  * on a 100px grid maps to colSpan 2 rather than always rounding up.
  */
 export function colSpanForWidth(naturalWidth: number, gridSize: number): number {
+  if (gridSize <= 0) return 1;
   return Math.max(1, Math.round(naturalWidth / gridSize));
 }
 
@@ -647,6 +674,7 @@ export function colSpanForWidth(naturalWidth: number, gridSize: number): number 
  * within a grid of the given cell size.
  */
 export function rowSpanForHeight(naturalHeight: number, gridSize: number): number {
+  if (gridSize <= 0) return 1;
   return Math.max(1, Math.round(naturalHeight / gridSize));
 }
 
