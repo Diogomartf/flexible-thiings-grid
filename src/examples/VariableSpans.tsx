@@ -1,8 +1,8 @@
-import ThiingsGrid, {
+import FlexibleThiingsGrid, {
   type ItemConfig,
   colSpanForWidth,
   rowSpanForHeight,
-} from "../../lib/ThiingsGrid";
+} from "../../lib/FlexibleThiingsGrid";
 
 const GRID_SIZE = 100;
 
@@ -39,7 +39,7 @@ const VariableSpansCell = ({ gridIndex, colSpan, rowSpan }: ItemConfig) => {
 };
 
 const VariableSpans = () => (
-  <ThiingsGrid
+  <FlexibleThiingsGrid
     gridSize={GRID_SIZE}
     getSpan={(pos) => {
       const idx = Math.abs(pos.x * 31 + pos.y * 17) % MOCK_SIZES.length;

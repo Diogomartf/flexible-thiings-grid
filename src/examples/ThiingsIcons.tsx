@@ -1,4 +1,4 @@
-import ThiingsGrid, { type ItemConfig } from "../../lib/ThiingsGrid";
+import FlexibleThiingsGrid, { type ItemConfig } from "../../lib/FlexibleThiingsGrid";
 
 const ThiingsIconCell = ({ gridIndex }: ItemConfig) => {
   const images = ["1", "2", "3", "4", "5", "6", "7", "8", "9"];
@@ -13,7 +13,7 @@ const ThiingsIconCell = ({ gridIndex }: ItemConfig) => {
 };
 
 export const ThiingsIcons = () => (
-  <ThiingsGrid
+  <FlexibleThiingsGrid
     gridSize={160}
     renderItem={ThiingsIconCell}
     initialPosition={{ x: 0, y: 0 }}

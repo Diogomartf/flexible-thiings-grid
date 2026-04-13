@@ -116,7 +116,7 @@ export type ItemConfig = {
   rowSpan: number;
 };
 
-export type ThiingsGridProps = {
+export type FlexibleThiingsGridProps = {
   gridSize: number;
   renderItem: (itemConfig: ItemConfig) => React.ReactNode;
   className?: string;
@@ -126,7 +126,7 @@ export type ThiingsGridProps = {
   onPositionChange?: (position: Position) => void;
 };
 
-class ThiingsGrid extends Component<ThiingsGridProps, State> {
+class FlexibleThiingsGrid extends Component<FlexibleThiingsGridProps, State> {
   private containerRef: React.RefObject<HTMLElement | null>;
   private lastPos: Position;
   private animationFrame: number | null;
@@ -751,4 +751,4 @@ export function rowSpanForHeight(naturalHeight: number, gridSize: number): numbe
   return Math.max(1, Math.round(naturalHeight / gridSize));
 }
 
-export default ThiingsGrid;
+export default FlexibleThiingsGrid;

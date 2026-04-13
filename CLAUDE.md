@@ -1,6 +1,6 @@
-# ThiingsGrid — Agent Quick-Start
+# FlexibleThiingsGrid — Agent Quick-Start
 
-ThiingsGrid is a single-file React class component (`lib/ThiingsGrid.tsx`) that renders an infinite, momentum-scrolling grid. Every visible cell is rendered on demand via a `renderItem` prop; cells outside the viewport are never mounted.
+FlexibleThiingsGrid is a single-file React class component (`lib/FlexibleThiingsGrid.tsx`) that renders an infinite, momentum-scrolling grid. Every visible cell is rendered on demand via a `renderItem` prop; cells outside the viewport are never mounted.
 
 ---
 
@@ -8,7 +8,7 @@ ThiingsGrid is a single-file React class component (`lib/ThiingsGrid.tsx`) that 
 
 ```typescript
 // Default export — the component
-export default ThiingsGrid;
+export default FlexibleThiingsGrid;
 
 // Named type exports
 export type Position    = { x: number; y: number };
@@ -20,7 +20,7 @@ export type ItemConfig = {
   colSpan:   number;   // resolved column span (≥ 1)
   rowSpan:   number;   // resolved row span (≥ 1)
 };
-export type ThiingsGridProps = {
+export type FlexibleThiingsGridProps = {
   gridSize:           number;                              // px per cell unit
   renderItem:         (config: ItemConfig) => ReactNode;
   className?:         string;
@@ -40,7 +40,7 @@ export function rowSpanForHeight(naturalHeight: number, gridSize: number): numbe
 ## Minimal usage
 
 ```tsx
-import ThiingsGrid, { type ItemConfig } from './lib/ThiingsGrid';
+import FlexibleThiingsGrid, { type ItemConfig } from './lib/FlexibleThiingsGrid';
 
 const Cell = ({ gridIndex }: ItemConfig) => (
   <div className="absolute inset-1 flex items-center justify-center bg-white rounded shadow">
@@ -48,7 +48,7 @@ const Cell = ({ gridIndex }: ItemConfig) => (
   </div>
 );
 
-<ThiingsGrid gridSize={100} renderItem={Cell} />
+<FlexibleThiingsGrid gridSize={100} renderItem={Cell} />
 ```
 
 Always use `position: absolute` (or `inset-*`) inside cells — the container div is already sized to `colSpan * gridSize` × `rowSpan * gridSize`.
@@ -58,8 +58,8 @@ Always use `position: absolute` (or `inset-*`) inside cells — the container di
 ## Variable cell spans
 
 ```tsx
-import ThiingsGrid, { colSpanForWidth, rowSpanForHeight } from './lib/ThiingsGrid';
-import type { ItemConfig, Position, CellSpan } from './lib/ThiingsGrid';
+import FlexibleThiingsGrid, { colSpanForWidth, rowSpanForHeight } from './lib/FlexibleThiingsGrid';
+import type { ItemConfig, Position, CellSpan } from './lib/FlexibleThiingsGrid';
 
 const GRID_SIZE = 100;
 
@@ -69,7 +69,7 @@ const SPANS: CellSpan[] = imageMeta.map(({ w, h }) => ({
   rowSpan: rowSpanForHeight(h, GRID_SIZE),
 }));
 
-<ThiingsGrid
+<FlexibleThiingsGrid
   gridSize={GRID_SIZE}
   getSpan={(pos: Position) => {
     const idx = getGridIndex(pos.x, pos.y) % SPANS.length;
@@ -96,7 +96,7 @@ const SPANS: CellSpan[] = imageMeta.map(({ w, h }) => ({
 ## Public methods (via ref)
 
 ```tsx
-const ref = React.createRef<ThiingsGrid>();
+const ref = React.createRef<FlexibleThiingsGrid>();
 
 // Read current pixel offset
 ref.current.publicGetCurrentPosition(): Position

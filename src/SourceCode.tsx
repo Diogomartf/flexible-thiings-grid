@@ -1,7 +1,7 @@
 import { componentNames, sourceCodes } from "./Playground";
 import { toast } from "sonner";
 
-import thingsGridSource from "../lib/ThiingsGrid.tsx?raw";
+import flexibleThiingsGridSource from "../lib/FlexibleThiingsGrid.tsx?raw";
 
 type SourceCodeProps = {
   currentExample: number;
@@ -17,10 +17,9 @@ const SourceCode = ({ currentExample }: SourceCodeProps) => {
     });
   };
 
-  const handleCopyThiingsGrid = async () => {
-    const thiingsGridCode = thingsGridSource;
-    await navigator.clipboard.writeText(thiingsGridCode);
-    toast.success("ThiingsGrid component copied to clipboard!");
+  const handleCopyFlexibleThiingsGrid = async () => {
+    await navigator.clipboard.writeText(flexibleThiingsGridSource);
+    toast.success("FlexibleThiingsGrid component copied to clipboard!");
   };
 
   return (
@@ -42,10 +41,10 @@ const SourceCode = ({ currentExample }: SourceCodeProps) => {
         </button>
 
         <button
-          onClick={handleCopyThiingsGrid}
+          onClick={handleCopyFlexibleThiingsGrid}
           className="flex-1 px-4 py-2.5 bg-gray-600 text-white border-none rounded-lg cursor-pointer text-sm font-medium hover:bg-gray-700 transition-colors duration-200"
         >
-          Copy ThiingsGrid.tsx
+          Copy FlexibleThiingsGrid.tsx
         </button>
       </div>
     </section>

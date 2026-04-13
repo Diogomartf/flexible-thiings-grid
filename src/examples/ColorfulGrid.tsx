@@ -1,4 +1,4 @@
-import ThiingsGrid, { type ItemConfig } from "../../lib/ThiingsGrid";
+import FlexibleThiingsGrid, { type ItemConfig } from "../../lib/FlexibleThiingsGrid";
 
 const ColorfulCell = ({ gridIndex }: ItemConfig) => {
   const colors = [
@@ -21,7 +21,7 @@ const ColorfulCell = ({ gridIndex }: ItemConfig) => {
 };
 
 export const ColorfulGrid = () => (
-  <ThiingsGrid gridSize={100} renderItem={ColorfulCell} />
+  <FlexibleThiingsGrid gridSize={100} renderItem={ColorfulCell} />
 );
 
 export default ColorfulGrid;
