@@ -4,13 +4,9 @@ FlexibleThiingsGrid is a fork of [charlieclark/thiings-grid](https://github.com/
 
 ![Variable spans demo](public/variable-spans-demo.png)
 
-## 🪩 [**Explore Thiings.co →**](https://thiings.co)
+## 🪩 [**Explore Letras de Braga →**](https://letras-de-braga.vercel.app/)
 
-> This is the component that powers the interactive grid on [thiings.co](https://thiings.co/) - A growing collection of 1200+ free 3D icons, generated with AI.
-
-## 🎮 [**Try the Live Playground →**](https://grid.thiings.co)
-
-> Experience FlexibleThiingsGrid in action with interactive examples and copy-paste ready code.
+> This is the component that powers the interactive grid with different sizes.
 
 ## ✨ Features
 
@@ -40,7 +36,9 @@ npm install react react-dom
 ### Basic Usage
 
 ```tsx
-import FlexibleThiingsGrid, { type ItemConfig } from './path/to/FlexibleThiingsGrid';
+import FlexibleThiingsGrid, {
+  type ItemConfig,
+} from "./path/to/FlexibleThiingsGrid";
 
 const MyCell = ({ gridIndex, position }: ItemConfig) => (
   <div className="absolute inset-1 flex items-center justify-center">
@@ -49,11 +47,8 @@ const MyCell = ({ gridIndex, position }: ItemConfig) => (
 );
 
 const App = () => (
-  <div style={{ width: '100vw', height: '100vh' }}>
-    <FlexibleThiingsGrid
-      gridSize={80}
-      renderItem={MyCell}
-    />
+  <div style={{ width: "100vw", height: "100vh" }}>
+    <FlexibleThiingsGrid gridSize={80} renderItem={MyCell} />
   </div>
 );
 ```
@@ -62,25 +57,25 @@ const App = () => (
 
 ### FlexibleThiingsGridProps
 
-| Prop | Type | Required | Default | Description |
-|------|------|----------|---------|-------------|
-| `gridSize` | `number` | ✅ | - | Size of each grid cell in pixels |
-| `renderItem` | `(config: ItemConfig) => ReactNode` | ✅ | - | Function to render each grid cell |
-| `className` | `string` | ❌ | - | CSS class name for the container |
-| `initialPosition` | `Position` | ❌ | `{ x: 0, y: 0 }` | Initial scroll position |
-| `getSpan` | `(position: Position) => CellSpan` | ❌ | `() => ({ colSpan: 1, rowSpan: 1 })` | Returns how many columns and rows a cell at the given grid position should span |
+| Prop              | Type                                | Required | Default                              | Description                                                                     |
+| ----------------- | ----------------------------------- | -------- | ------------------------------------ | ------------------------------------------------------------------------------- |
+| `gridSize`        | `number`                            | ✅       | -                                    | Size of each grid cell in pixels                                                |
+| `renderItem`      | `(config: ItemConfig) => ReactNode` | ✅       | -                                    | Function to render each grid cell                                               |
+| `className`       | `string`                            | ❌       | -                                    | CSS class name for the container                                                |
+| `initialPosition` | `Position`                          | ❌       | `{ x: 0, y: 0 }`                     | Initial scroll position                                                         |
+| `getSpan`         | `(position: Position) => CellSpan`  | ❌       | `() => ({ colSpan: 1, rowSpan: 1 })` | Returns how many columns and rows a cell at the given grid position should span |
 
 ### ItemConfig
 
 The `renderItem` function receives an `ItemConfig` object with:
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `gridIndex` | `number` | Unique index for the grid cell |
-| `position` | `Position` | Grid coordinates `{ x: number, y: number }` |
-| `isMoving` | `boolean` | Whether the grid is currently being moved/scrolled |
-| `colSpan` | `number` | Number of columns this cell spans (≥ 1) |
-| `rowSpan` | `number` | Number of rows this cell spans (≥ 1) |
+| Property    | Type       | Description                                        |
+| ----------- | ---------- | -------------------------------------------------- |
+| `gridIndex` | `number`   | Unique index for the grid cell                     |
+| `position`  | `Position` | Grid coordinates `{ x: number, y: number }`        |
+| `isMoving`  | `boolean`  | Whether the grid is currently being moved/scrolled |
+| `colSpan`   | `number`   | Number of columns this cell spans (≥ 1)            |
+| `rowSpan`   | `number`   | Number of rows this cell spans (≥ 1)               |
 
 ### CellSpan
 
@@ -141,7 +136,7 @@ export const SimpleNumbers = () => (
 const ColorfulCell = ({ gridIndex }: ItemConfig) => {
   const colors = [
     "bg-red-300",
-    "bg-green-300", 
+    "bg-green-300",
     "bg-blue-300",
     "bg-yellow-300",
     "bg-pink-300",
@@ -150,7 +145,9 @@ const ColorfulCell = ({ gridIndex }: ItemConfig) => {
   const colorClass = colors[gridIndex % colors.length];
 
   return (
-    <div className={`absolute inset-0 flex items-center justify-center ${colorClass} text-xs font-bold text-gray-800 shadow-sm`}>
+    <div
+      className={`absolute inset-0 flex items-center justify-center ${colorClass} text-xs font-bold text-gray-800 shadow-sm`}
+    >
       {gridIndex}
     </div>
   );
@@ -165,9 +162,11 @@ export const ColorfulGrid = () => (
 
 ```tsx
 const CardCell = ({ gridIndex, position, isMoving }: ItemConfig) => (
-  <div className={`absolute inset-1 flex flex-col items-center justify-center bg-white border border-gray-200 rounded-xl p-2 text-xs text-gray-800 transition-shadow ${
-    isMoving ? "shadow-xl" : "shadow-md"
-  }`}>
+  <div
+    className={`absolute inset-1 flex flex-col items-center justify-center bg-white border border-gray-200 rounded-xl p-2 text-xs text-gray-800 transition-shadow ${
+      isMoving ? "shadow-xl" : "shadow-md"
+    }`}
+  >
     <div className="text-base font-bold mb-1">#{gridIndex}</div>
     <div className="text-[10px] text-gray-500">
       {position.x}, {position.y}
@@ -176,10 +175,7 @@ const CardCell = ({ gridIndex, position, isMoving }: ItemConfig) => (
 );
 
 export const CardLayout = () => (
-  <FlexibleThiingsGrid
-    gridSize={150}
-    renderItem={CardCell}
-  />
+  <FlexibleThiingsGrid gridSize={150} renderItem={CardCell} />
 );
 ```
 
@@ -198,9 +194,9 @@ import FlexibleThiingsGrid, {
 // Pre-compute spans from static image metadata
 const GRID_SIZE = 100;
 const images = [
-  { src: "/img/wide.jpg",   width: 320, height: 180 }, // landscape → 3×2
+  { src: "/img/wide.jpg", width: 320, height: 180 }, // landscape → 3×2
   { src: "/img/square.jpg", width: 100, height: 100 }, // square    → 1×1
-  { src: "/img/tall.jpg",   width: 100, height: 220 }, // portrait  → 1×2
+  { src: "/img/tall.jpg", width: 100, height: 220 }, // portrait  → 1×2
   // ...up to 30 images
 ];
 
@@ -229,7 +225,7 @@ export const VariableGrid = () => (
   <FlexibleThiingsGrid
     gridSize={GRID_SIZE}
     getSpan={(pos) => {
-      const idx = /* your index fn */(pos.x, pos.y) % images.length;
+      const idx = /* your index fn */ (pos.x, pos.y) % images.length;
       return SPANS[idx];
     }}
     renderItem={ImageCell}
@@ -254,16 +250,12 @@ Always use absolute positioning within your cell components for optimal performa
 ```tsx
 // ✅ Good
 const MyCell = ({ gridIndex }: ItemConfig) => (
-  <div className="absolute inset-1 ...">
-    {gridIndex}
-  </div>
+  <div className="absolute inset-1 ...">{gridIndex}</div>
 );
 
 // ❌ Avoid - can cause layout issues
 const MyCell = ({ gridIndex }: ItemConfig) => (
-  <div className="w-full h-full ...">
-    {gridIndex}
-  </div>
+  <div className="w-full h-full ...">{gridIndex}</div>
 );
 ```
 
@@ -278,11 +270,7 @@ const OptimizedCell = React.memo(({ gridIndex, isMoving }: ItemConfig) => {
     return expensiveCalculation(gridIndex);
   }, [gridIndex]);
 
-  return (
-    <div className="absolute inset-1 ...">
-      {computedValue}
-    </div>
-  );
+  return <div className="absolute inset-1 ...">{computedValue}</div>;
 });
 ```
 
@@ -319,16 +307,12 @@ const MyComponent = () => {
   const getCurrentPosition = () => {
     if (gridRef.current) {
       const position = gridRef.current.publicGetCurrentPosition();
-      console.log('Current position:', position);
+      console.log("Current position:", position);
     }
   };
 
   return (
-    <FlexibleThiingsGrid
-      ref={gridRef}
-      gridSize={80}
-      renderItem={MyCell}
-    />
+    <FlexibleThiingsGrid ref={gridRef} gridSize={80} renderItem={MyCell} />
   );
 };
 ```
@@ -352,8 +336,8 @@ const useResponsiveGridSize = () => {
     };
 
     handleResize();
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
   }, []);
 
   return gridSize;
@@ -361,13 +345,8 @@ const useResponsiveGridSize = () => {
 
 const ResponsiveGrid = () => {
   const gridSize = useResponsiveGridSize();
-  
-  return (
-    <FlexibleThiingsGrid
-      gridSize={gridSize}
-      renderItem={MyCell}
-    />
-  );
+
+  return <FlexibleThiingsGrid gridSize={gridSize} renderItem={MyCell} />;
 };
 ```
 
@@ -376,6 +355,7 @@ const ResponsiveGrid = () => {
 ### Touch/Mouse Events
 
 The component handles:
+
 - **Mouse**: Click and drag to pan
 - **Touch**: Touch and drag to pan
 - **Wheel**: Scroll wheel for precise movements
@@ -428,6 +408,7 @@ MIT License - see the LICENSE file for details.
 
 ## 🙏 Acknowledgments
 
+- Based on [charlieclark/thiings-grid](https://github.com/charlieclark/thiings-grid)
 - Built with React and TypeScript
 - Styled with Tailwind CSS
 - Bundled with Vite
