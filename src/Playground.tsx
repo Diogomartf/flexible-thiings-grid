@@ -3,12 +3,14 @@ import SimpleNumbersExample from "./examples/SimpleNumbers";
 import ColorfulGridExample from "./examples/ColorfulGrid";
 import EmojiFunExample from "./examples/EmojiFun";
 import CardLayoutExample from "./examples/CardLayout";
+import VariableSpansExample from "./examples/VariableSpans";
 
 import thiingsIconsSource from "./examples/ThiingsIcons.tsx?raw";
 import simpleNumbersSource from "./examples/SimpleNumbers.tsx?raw";
 import colorfulGridSource from "./examples/ColorfulGrid.tsx?raw";
 import emojiFunSource from "./examples/EmojiFun.tsx?raw";
 import cardLayoutSource from "./examples/CardLayout.tsx?raw";
+import variableSpansSource from "./examples/VariableSpans.tsx?raw";
 
 export const exampleComponents = [
   ThiingsIconsExample,
@@ -16,6 +18,7 @@ export const exampleComponents = [
   EmojiFunExample,
   ColorfulGridExample,
   CardLayoutExample,
+  VariableSpansExample,
 ];
 
 export const sourceCodes = [
@@ -24,6 +27,7 @@ export const sourceCodes = [
   emojiFunSource,
   colorfulGridSource,
   cardLayoutSource,
+  variableSpansSource,
 ];
 
 export const componentNames = sourceCodes.map((code) => {

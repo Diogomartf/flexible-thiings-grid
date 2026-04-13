@@ -1,4 +1,4 @@
-import ThiingsGrid, { type ItemConfig } from "../../lib/ThiingsGrid";
+import FlexibleThiingsGrid, { type ItemConfig } from "../../lib/FlexibleThiingsGrid";
 
 const CardCell = ({ gridIndex, position, isMoving }: ItemConfig) => (
   <div
@@ -14,7 +14,7 @@ const CardCell = ({ gridIndex, position, isMoving }: ItemConfig) => (
 );
 
 export const CardLayout = () => (
-  <ThiingsGrid
+  <FlexibleThiingsGrid
     gridSize={150}
     renderItem={CardCell}
   />

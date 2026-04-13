@@ -6,13 +6,14 @@ const UPDATE_INTERVAL = 16;
 const VELOCITY_HISTORY_SIZE = 5;
 const FRICTION = 0.997; // Per-millisecond friction (applied as friction^deltaTime)
 const VELOCITY_SCALE = 16; // Scale px/ms velocity to px/frame at 60fps
+const SPAN_OVERSCAN = 3; // Extra cells scanned beyond viewport edges for spanning cells
 
 // Custom debounce implementation
 function debounce<T extends (...args: unknown[]) => unknown>(
   func: T,
-  wait: number
+  wait: number,
 ) {
-  let timeoutId: number | undefined = undefined;
+  let timeoutId: ReturnType<typeof setTimeout> | undefined = undefined;
 
   const debouncedFn = function (...args: Parameters<T>) {
     if (timeoutId) {
@@ -36,10 +37,10 @@ function debounce<T extends (...args: unknown[]) => unknown>(
 function throttle<T extends (...args: unknown[]) => unknown>(
   func: T,
   limit: number,
-  options: { leading?: boolean; trailing?: boolean } = {}
+  options: { leading?: boolean; trailing?: boolean } = {},
 ) {
   let lastCall = 0;
-  let timeoutId: number | undefined = undefined;
+  let timeoutId: ReturnType<typeof setTimeout> | undefined = undefined;
   const { leading = true, trailing = true } = options;
 
   const throttledFn = function (...args: Parameters<T>) {
@@ -81,14 +82,23 @@ function getDistance(p1: Position, p2: Position) {
   return Math.sqrt(dx * dx + dy * dy);
 }
 
-type Position = {
+// Collision-free integer key for grid coordinates within ±100 000 cells — no string allocation.
+function cellKey(x: number, y: number): number {
+  return (x + 100_000) * 200_001 + (y + 100_000);
+}
+
+export type Position = {
   x: number;
   y: number;
 };
 
+export type CellSpan = { colSpan: number; rowSpan: number };
+
 type GridItem = {
   position: Position;
   gridIndex: number;
+  colSpan: number;
+  rowSpan: number;
 };
 
 type State = {
@@ -107,16 +117,21 @@ export type ItemConfig = {
   isMoving: boolean;
   position: Position;
   gridIndex: number;
+  colSpan: number;
+  rowSpan: number;
 };
 
-export type ThiingsGridProps = {
+export type FlexibleThiingsGridProps = {
   gridSize: number;
   renderItem: (itemConfig: ItemConfig) => React.ReactNode;
   className?: string;
   initialPosition?: Position;
+  getSpan?: (position: Position) => CellSpan;
+  gap?: number;
+  onPositionChange?: (position: Position) => void;
 };
 
-class ThiingsGrid extends Component<ThiingsGridProps, State> {
+class FlexibleThiingsGrid extends Component<FlexibleThiingsGridProps, State> {
   private containerRef: React.RefObject<HTMLElement | null>;
   private lastPos: Position;
   private animationFrame: number | null;
@@ -126,8 +141,13 @@ class ThiingsGrid extends Component<ThiingsGridProps, State> {
   private cachedWidth: number;
   private cachedHeight: number;
   private lastGridCenter: Position;
+  private maxObservedSpan: number;
+  private scrollToTarget: Position | null;
+  private scrollToStart: Position | null;
+  private scrollToStartTime: number;
+  private readonly SCROLL_TO_DURATION = 600; // ms
 
-  constructor(props: ThiingsGridProps) {
+  constructor(props: FlexibleThiingsGridProps) {
     super(props);
     const offset = this.props.initialPosition || { x: 0, y: 0 };
     this.state = {
@@ -149,13 +169,17 @@ class ThiingsGrid extends Component<ThiingsGridProps, State> {
     this.cachedWidth = 0;
     this.cachedHeight = 0;
     this.lastGridCenter = { x: Infinity, y: Infinity };
+    this.maxObservedSpan = 1;
+    this.scrollToTarget = null;
+    this.scrollToStart = null;
+    this.scrollToStartTime = 0;
     this.debouncedUpdateGridItems = throttle(
       this.updateGridItems,
       UPDATE_INTERVAL,
       {
         leading: true,
         trailing: true,
-      }
+      },
     );
   }
 
@@ -172,11 +196,30 @@ class ThiingsGrid extends Component<ThiingsGridProps, State> {
       this.containerRef.current.addEventListener(
         "touchmove",
         this.handleTouchMove,
-        { passive: false }
+        { passive: false },
       );
     }
 
     window.addEventListener("resize", this.handleResize);
+  }
+
+  componentDidUpdate(prevProps: FlexibleThiingsGridProps, prevState: State) {
+    if (prevProps.getSpan !== this.props.getSpan) {
+      this.maxObservedSpan = 1; // reset so overscan re-calibrates for new getSpan
+      this.lastGridCenter = { x: Infinity, y: Infinity };
+      this.updateGridItems();
+    }
+    if (prevProps.gap !== this.props.gap) {
+      this.lastGridCenter = { x: Infinity, y: Infinity };
+      this.updateGridItems();
+    }
+    if (
+      this.props.onPositionChange &&
+      (prevState.offset.x !== this.state.offset.x ||
+        prevState.offset.y !== this.state.offset.y)
+    ) {
+      this.props.onPositionChange(this.state.offset);
+    }
   }
 
   componentWillUnmount() {
@@ -194,7 +237,7 @@ class ThiingsGrid extends Component<ThiingsGridProps, State> {
       this.containerRef.current.removeEventListener("wheel", this.handleWheel);
       this.containerRef.current.removeEventListener(
         "touchmove",
-        this.handleTouchMove
+        this.handleTouchMove,
       );
     }
   }
@@ -217,14 +260,20 @@ class ThiingsGrid extends Component<ThiingsGridProps, State> {
     return this.state.offset;
   };
 
-  private calculateVisiblePositions = (): Position[] | null => {
+  private get effectiveGap(): number {
+    return this.props.gap ?? 0;
+  }
+
+  private calculateVisiblePositions = (offset: Position = this.state.offset): Position[] | null => {
     const width = this.cachedWidth;
     const height = this.cachedHeight;
     if (width === 0 && height === 0) return null;
 
+    const step = this.props.gridSize + this.effectiveGap;
+
     // Calculate center position based on offset
-    const centerX = -Math.round(this.state.offset.x / this.props.gridSize);
-    const centerY = -Math.round(this.state.offset.y / this.props.gridSize);
+    const centerX = -Math.round(offset.x / step);
+    const centerY = -Math.round(offset.y / step);
 
     // Skip recalculation if the grid center hasn't moved to a new cell
     if (
@@ -236,15 +285,29 @@ class ThiingsGrid extends Component<ThiingsGridProps, State> {
     this.lastGridCenter = { x: centerX, y: centerY };
 
     // Calculate grid cells needed to fill container
-    const cellsX = Math.ceil(width / this.props.gridSize);
-    const cellsY = Math.ceil(height / this.props.gridSize);
+    const cellsX = Math.ceil(width / step);
+    const cellsY = Math.ceil(height / step);
 
     const positions: Position[] = [];
     const halfCellsX = Math.ceil(cellsX / 2);
     const halfCellsY = Math.ceil(cellsY / 2);
 
-    for (let y = centerY - halfCellsY; y <= centerY + halfCellsY; y++) {
-      for (let x = centerX - halfCellsX; x <= centerX + halfCellsX; x++) {
+    // Skip overscan entirely when getSpan is not provided (no spanning cells possible).
+    // When getSpan is provided, use at least SPAN_OVERSCAN and grow with observed spans.
+    const overscan = this.props.getSpan
+      ? Math.max(SPAN_OVERSCAN, this.maxObservedSpan - 1)
+      : 0;
+
+    for (
+      let y = centerY - halfCellsY - overscan;
+      y <= centerY + halfCellsY + overscan;
+      y++
+    ) {
+      for (
+        let x = centerX - halfCellsX - overscan;
+        x <= centerX + halfCellsX + overscan;
+        x++
+      ) {
         positions.push({ x, y });
       }
     }
@@ -289,40 +352,83 @@ class ThiingsGrid extends Component<ThiingsGridProps, State> {
     return index;
   };
 
+  private getSpanForPosition = (position: Position): CellSpan => {
+    if (this.props.getSpan) {
+      const span = this.props.getSpan(position);
+      return {
+        colSpan: Math.min(Math.max(1, Math.floor(span.colSpan)), 20),
+        rowSpan: Math.min(Math.max(1, Math.floor(span.rowSpan)), 20),
+      };
+    }
+    return { colSpan: 1, rowSpan: 1 };
+  };
+
   private debouncedStopMoving = debounce(() => {
     this.setState({ isMoving: false, restPos: { ...this.state.offset } });
   }, 200);
 
+  // Pure computation — safe to call with a pre-setState offset (e.g. from handleMove).
+  // Returns null when the grid center hasn't moved to a new cell (no rebuild needed).
+  private buildGridItems = (offset: Position): { gridItems: GridItem[]; isMoving: boolean } | null => {
+    const positions = this.calculateVisiblePositions(offset);
+    if (positions === null) return null;
+
+    // Pass 1: resolve spans, build covered-cell set, track max span.
+    // Uses integer keys to avoid string allocation on every visible cell.
+    const spanCache = new Map<number, CellSpan>();
+    const coveredSet = new Set<number>();
+    let maxSpanSeen = 1;
+
+    for (const position of positions) {
+      const key = cellKey(position.x, position.y);
+      if (coveredSet.has(key)) continue; // suppressed by a previous anchor — skip
+      const span = this.getSpanForPosition(position);
+      spanCache.set(key, span);
+
+      const { colSpan, rowSpan } = span;
+      const localMax = Math.max(colSpan, rowSpan);
+      if (localMax > maxSpanSeen) maxSpanSeen = localMax;
+
+      if (colSpan === 1 && rowSpan === 1) continue;
+      for (let dy = 0; dy < rowSpan; dy++) {
+        for (let dx = 0; dx < colSpan; dx++) {
+          if (dx === 0 && dy === 0) continue;
+          coveredSet.add(cellKey(position.x + dx, position.y + dy));
+        }
+      }
+    }
+
+    if (maxSpanSeen > this.maxObservedSpan) {
+      this.maxObservedSpan = maxSpanSeen;
+      this.lastGridCenter = { x: Infinity, y: Infinity };
+    }
+
+    // Pass 2: build gridItems, skipping covered positions.
+    const newItems: GridItem[] = [];
+    for (const position of positions) {
+      const key = cellKey(position.x, position.y);
+      if (coveredSet.has(key)) continue;
+      const gridIndex = this.getItemIndexForPosition(position.x, position.y);
+      const { colSpan, rowSpan } = spanCache.get(key)!;
+      newItems.push({ position, gridIndex, colSpan, rowSpan });
+    }
+
+    const distanceFromRest = getDistance(offset, this.state.restPos);
+    return { gridItems: newItems, isMoving: distanceFromRest > 5 };
+  };
+
   private updateGridItems = () => {
     if (!this.isComponentMounted) return;
 
-    const positions = this.calculateVisiblePositions();
-    if (positions === null) {
-      // Grid center cell unchanged — skip expensive re-render
-      const distanceFromRest = getDistance(
-        this.state.offset,
-        this.state.restPos
-      );
-      const isMoving = distanceFromRest > 5;
-      if (isMoving !== this.state.isMoving) {
-        this.setState({ isMoving });
-      }
+    const result = this.buildGridItems(this.state.offset);
+    if (result === null) {
+      // Grid center unchanged — no layout rebuild needed. debouncedStopMoving handles
+      // the isMoving: false transition; no extra setState required here.
       this.debouncedStopMoving();
       return;
     }
 
-    const newItems = positions.map((position) => {
-      const gridIndex = this.getItemIndexForPosition(position.x, position.y);
-      return {
-        position,
-        gridIndex,
-      };
-    });
-
-    const distanceFromRest = getDistance(this.state.offset, this.state.restPos);
-
-    this.setState({ gridItems: newItems, isMoving: distanceFromRest > 5 });
-
+    this.setState(result);
     this.debouncedStopMoving();
   };
 
@@ -335,7 +441,7 @@ class ThiingsGrid extends Component<ThiingsGridProps, State> {
     if (deltaTime >= UPDATE_INTERVAL) {
       const { velocity } = this.state;
       const speed = Math.sqrt(
-        velocity.x * velocity.x + velocity.y * velocity.y
+        velocity.x * velocity.x + velocity.y * velocity.y,
       );
 
       if (speed < MIN_VELOCITY) {
@@ -343,10 +449,7 @@ class ThiingsGrid extends Component<ThiingsGridProps, State> {
         return;
       }
 
-      // Time-based friction: friction^deltaTime gives frame-rate independence
       const deceleration = Math.pow(FRICTION, deltaTime);
-
-      // Scale position change by deltaTime for smooth, frame-rate-independent motion
       const dt = deltaTime / UPDATE_INTERVAL;
 
       this.setState(
@@ -360,7 +463,7 @@ class ThiingsGrid extends Component<ThiingsGridProps, State> {
             y: prevState.velocity.y * deceleration,
           },
         }),
-        this.debouncedUpdateGridItems
+        this.debouncedUpdateGridItems,
       );
 
       this.lastUpdateTime = currentTime;
@@ -374,6 +477,8 @@ class ThiingsGrid extends Component<ThiingsGridProps, State> {
       cancelAnimationFrame(this.animationFrame);
       this.animationFrame = null;
     }
+    this.scrollToTarget = null;
+    this.scrollToStart = null;
 
     this.setState({
       isDragging: true,
@@ -388,58 +493,55 @@ class ThiingsGrid extends Component<ThiingsGridProps, State> {
 
     this.lastPos = { x: p.x, y: p.y };
   };
+
   private handleMove = (p: Position) => {
     if (!this.state.isDragging) return;
 
     const currentTime = performance.now();
     const timeDelta = currentTime - this.state.lastMoveTime;
 
-    // Calculate raw velocity based on position and time
     const rawVelocity = {
       x: (p.x - this.lastPos.x) / (timeDelta || 1),
       y: (p.y - this.lastPos.y) / (timeDelta || 1),
     };
 
-    // Add to velocity history and maintain fixed size
     const velocityHistory = [...this.state.velocityHistory, rawVelocity];
-    if (velocityHistory.length > VELOCITY_HISTORY_SIZE) {
-      velocityHistory.shift();
-    }
+    if (velocityHistory.length > VELOCITY_HISTORY_SIZE) velocityHistory.shift();
 
-    // Calculate smoothed velocity using recency-weighted average
-    // More recent samples get exponentially higher weight
     let totalWeight = 0;
     const smoothedVelocity = velocityHistory.reduce(
       (acc, vel, i) => {
-        const weight = Math.pow(2, i); // 1, 2, 4, 8, 16...
+        const weight = Math.pow(2, i);
         totalWeight += weight;
-        return {
-          x: acc.x + vel.x * weight,
-          y: acc.y + vel.y * weight,
-        };
+        return { x: acc.x + vel.x * weight, y: acc.y + vel.y * weight };
       },
-      { x: 0, y: 0 }
+      { x: 0, y: 0 },
     );
     smoothedVelocity.x /= totalWeight;
     smoothedVelocity.y /= totalWeight;
 
-    this.setState(
-      {
-        velocity: smoothedVelocity,
-        offset: {
-          x: p.x - this.state.startPos.x,
-          y: p.y - this.state.startPos.y,
-        },
-        lastMoveTime: currentTime,
-        velocityHistory,
-      },
-      this.updateGridItems
-    );
+    const newOffset = {
+      x: p.x - this.state.startPos.x,
+      y: p.y - this.state.startPos.y,
+    };
 
+    // Compute grid items with the new offset before setState — collapses two render
+    // cycles (offset update + grid rebuild) into one.
+    const gridResult = this.buildGridItems(newOffset);
+
+    this.setState({
+      velocity: smoothedVelocity,
+      offset: newOffset,
+      lastMoveTime: currentTime,
+      velocityHistory,
+      ...(gridResult ?? {}),
+    });
+
+    this.debouncedStopMoving();
     this.lastPos = { x: p.x, y: p.y };
   };
+
   private handleUp = () => {
-    // Discard velocity if the last move was too long ago (finger rested before release)
     const timeSinceLastMove = performance.now() - this.state.lastMoveTime;
     const velocity =
       timeSinceLastMove > 100
@@ -454,19 +556,64 @@ class ThiingsGrid extends Component<ThiingsGridProps, State> {
     this.animationFrame = requestAnimationFrame(this.animate);
   };
 
+  public scrollTo = (position: Position, animated = false): void => {
+    if (this.animationFrame) {
+      cancelAnimationFrame(this.animationFrame);
+      this.animationFrame = null;
+    }
+    this.scrollToTarget = null;
+    this.scrollToStart = null;
+
+    if (!animated) {
+      this.setState(
+        { offset: { ...position }, velocity: { x: 0, y: 0 } },
+        () => {
+          this.lastGridCenter = { x: Infinity, y: Infinity };
+          this.updateGridItems();
+        },
+      );
+      return;
+    }
+
+    this.scrollToTarget = { ...position };
+    this.scrollToStart = { ...this.state.offset };
+    this.scrollToStartTime = performance.now();
+    this.animationFrame = requestAnimationFrame(this.animateScrollTo);
+  };
+
+  private animateScrollTo = () => {
+    if (!this.scrollToTarget || !this.scrollToStart) return;
+    const elapsed = performance.now() - this.scrollToStartTime;
+    const t = Math.min(elapsed / this.SCROLL_TO_DURATION, 1);
+    const ease = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    const offset = {
+      x:
+        this.scrollToStart.x +
+        (this.scrollToTarget.x - this.scrollToStart.x) * ease,
+      y:
+        this.scrollToStart.y +
+        (this.scrollToTarget.y - this.scrollToStart.y) * ease,
+    };
+    this.setState(
+      { offset, velocity: { x: 0, y: 0 } },
+      this.debouncedUpdateGridItems,
+    );
+    if (t < 1) {
+      this.animationFrame = requestAnimationFrame(this.animateScrollTo);
+    } else {
+      this.scrollToTarget = null;
+      this.scrollToStart = null;
+      this.animationFrame = null;
+    }
+  };
+
   private handleMouseDown = (e: React.MouseEvent) => {
-    this.handleDown({
-      x: e.clientX,
-      y: e.clientY,
-    });
+    this.handleDown({ x: e.clientX, y: e.clientY });
   };
 
   private handleMouseMove = (e: React.MouseEvent) => {
     e.preventDefault();
-    this.handleMove({
-      x: e.clientX,
-      y: e.clientY,
-    });
+    this.handleMove({ x: e.clientX, y: e.clientY });
   };
 
   private handleMouseUp = () => {
@@ -475,25 +622,15 @@ class ThiingsGrid extends Component<ThiingsGridProps, State> {
 
   private handleTouchStart = (e: React.TouchEvent) => {
     const touch = e.touches[0];
-
     if (!touch) return;
-
-    this.handleDown({
-      x: touch.clientX,
-      y: touch.clientY,
-    });
+    this.handleDown({ x: touch.clientX, y: touch.clientY });
   };
 
   private handleTouchMove = (e: TouchEvent) => {
     const touch = e.touches[0];
-
     if (!touch) return;
-
     e.preventDefault();
-    this.handleMove({
-      x: touch.clientX,
-      y: touch.clientY,
-    });
+    this.handleMove({ x: touch.clientX, y: touch.clientY });
   };
 
   private handleTouchEnd = () => {
@@ -502,20 +639,15 @@ class ThiingsGrid extends Component<ThiingsGridProps, State> {
 
   private handleWheel = (e: WheelEvent) => {
     e.preventDefault();
-
-    // Get the scroll deltas
-    const deltaX = e.deltaX;
-    const deltaY = e.deltaY;
-
     this.setState(
       (prevState) => ({
         offset: {
-          x: prevState.offset.x - deltaX,
-          y: prevState.offset.y - deltaY,
+          x: prevState.offset.x - e.deltaX,
+          y: prevState.offset.y - e.deltaY,
         },
-        velocity: { x: 0, y: 0 }, // Reset velocity when scrolling
+        velocity: { x: 0, y: 0 },
       }),
-      this.debouncedUpdateGridItems
+      this.debouncedUpdateGridItems,
     );
   };
 
@@ -554,8 +686,14 @@ class ThiingsGrid extends Component<ThiingsGridProps, State> {
           }}
         >
           {gridItems.map((item) => {
-            const x = item.position.x * gridSize + containerWidth / 2;
-            const y = item.position.y * gridSize + containerHeight / 2;
+            const gap = this.effectiveGap;
+            const step = gridSize + gap;
+            const x = item.position.x * step + containerWidth / 2;
+            const y = item.position.y * step + containerHeight / 2;
+            const cellWidth =
+              gridSize * item.colSpan + gap * (item.colSpan - 1);
+            const cellHeight =
+              gridSize * item.rowSpan + gap * (item.rowSpan - 1);
 
             return (
               <div
@@ -566,8 +704,8 @@ class ThiingsGrid extends Component<ThiingsGridProps, State> {
                   alignItems: "center",
                   justifyContent: "center",
                   userSelect: "none",
-                  width: gridSize,
-                  height: gridSize,
+                  width: cellWidth,
+                  height: cellHeight,
                   transform: `translate3d(${x}px, ${y}px, 0)`,
                   marginLeft: `-${gridSize / 2}px`,
                   marginTop: `-${gridSize / 2}px`,
@@ -577,6 +715,8 @@ class ThiingsGrid extends Component<ThiingsGridProps, State> {
                   gridIndex: item.gridIndex,
                   position: item.position,
                   isMoving,
+                  colSpan: item.colSpan,
+                  rowSpan: item.rowSpan,
                 })}
               </div>
             );
@@ -587,4 +727,28 @@ class ThiingsGrid extends Component<ThiingsGridProps, State> {
   }
 }
 
-export default ThiingsGrid;
+/**
+ * Returns the colSpan needed to fit an image of the given natural width
+ * within a grid of the given cell size.
+ */
+export function colSpanForWidth(
+  naturalWidth: number,
+  gridSize: number,
+): number {
+  if (gridSize <= 0) return 1;
+  return Math.max(1, Math.round(naturalWidth / gridSize));
+}
+
+/**
+ * Returns the rowSpan needed to fit an image of the given natural height
+ * within a grid of the given cell size.
+ */
+export function rowSpanForHeight(
+  naturalHeight: number,
+  gridSize: number,
+): number {
+  if (gridSize <= 0) return 1;
+  return Math.max(1, Math.round(naturalHeight / gridSize));
+}
+
+export default FlexibleThiingsGrid;

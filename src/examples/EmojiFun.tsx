@@ -1,4 +1,4 @@
-import ThiingsGrid, { type ItemConfig } from "../../lib/ThiingsGrid";
+import FlexibleThiingsGrid, { type ItemConfig } from "../../lib/FlexibleThiingsGrid";
 
 const EmojiCell = ({ gridIndex }: ItemConfig) => {
   const emojis = ["🎨", "🚀", "🌟", "🎪", "🎭", "🎨", "🎸", "🎯", "🎲", "🎳"];
@@ -12,7 +12,7 @@ const EmojiCell = ({ gridIndex }: ItemConfig) => {
 };
 
 export const EmojiFun = () => (
-  <ThiingsGrid
+  <FlexibleThiingsGrid
     gridSize={120}
     renderItem={EmojiCell}
     initialPosition={{ x: 0, y: 0 }}

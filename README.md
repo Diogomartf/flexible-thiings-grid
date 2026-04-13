@@ -1,6 +1,8 @@
-# ThiingsGrid
+# FlexibleThiingsGrid
 
-A high-performance, infinite scrolling grid component for React that provides smooth touch/mouse interactions with momentum-based scrolling. Perfect for displaying large datasets in a grid format with custom cell renderers.
+FlexibleThiingsGrid is a fork of [charlieclark/thiings-grid](https://github.com/charlieclark/thiings-grid) — the component that powers the infinite icon grid on Thiings.co. It keeps everything that makes the original great and adds one core capability: cells that span multiple columns and rows.
+
+![Variable spans demo](public/variable-spans-demo.png)
 
 ## 🪩 [**Explore Thiings.co →**](https://thiings.co)
 
@@ -8,7 +10,7 @@ A high-performance, infinite scrolling grid component for React that provides sm
 
 ## 🎮 [**Try the Live Playground →**](https://grid.thiings.co)
 
-> Experience ThiingsGrid in action with interactive examples and copy-paste ready code.
+> Experience FlexibleThiingsGrid in action with interactive examples and copy-paste ready code.
 
 ## ✨ Features
 
@@ -18,6 +20,7 @@ A high-performance, infinite scrolling grid component for React that provides sm
 - ♾️ **Infinite Grid**: Supports unlimited grid sizes with efficient rendering
 - 🎨 **Custom Renderers**: Flexible cell rendering with your own components
 - 🔧 **TypeScript Support**: Full type safety with comprehensive TypeScript definitions
+- 📐 **Variable Cell Sizes**: Cells can span multiple columns and/or rows for rich layouts
 
 ## 🚀 Quick Start
 
@@ -25,17 +28,19 @@ A high-performance, infinite scrolling grid component for React that provides sm
 
 This component is currently part of this repository. To use it in your project:
 
-1. Copy the `lib/ThiingsGrid.tsx` file to your project
+1. Copy the `lib/FlexibleThiingsGrid.tsx` file to your project
 2. Install the required dependencies:
 
 ```bash
 npm install react react-dom
 ```
 
+> **Next.js users**: the component uses browser-only APIs. Add `"use client"` at the top of any file that imports it, or wrap it in your own client component.
+
 ### Basic Usage
 
 ```tsx
-import ThiingsGrid, { type ItemConfig } from './path/to/ThiingsGrid';
+import FlexibleThiingsGrid, { type ItemConfig } from './path/to/FlexibleThiingsGrid';
 
 const MyCell = ({ gridIndex, position }: ItemConfig) => (
   <div className="absolute inset-1 flex items-center justify-center">
@@ -45,7 +50,7 @@ const MyCell = ({ gridIndex, position }: ItemConfig) => (
 
 const App = () => (
   <div style={{ width: '100vw', height: '100vh' }}>
-    <ThiingsGrid
+    <FlexibleThiingsGrid
       gridSize={80}
       renderItem={MyCell}
     />
@@ -55,7 +60,7 @@ const App = () => (
 
 ## 📚 API Reference
 
-### ThiingsGridProps
+### FlexibleThiingsGridProps
 
 | Prop | Type | Required | Default | Description |
 |------|------|----------|---------|-------------|
@@ -63,6 +68,7 @@ const App = () => (
 | `renderItem` | `(config: ItemConfig) => ReactNode` | ✅ | - | Function to render each grid cell |
 | `className` | `string` | ❌ | - | CSS class name for the container |
 | `initialPosition` | `Position` | ❌ | `{ x: 0, y: 0 }` | Initial scroll position |
+| `getSpan` | `(position: Position) => CellSpan` | ❌ | `() => ({ colSpan: 1, rowSpan: 1 })` | Returns how many columns and rows a cell at the given grid position should span |
 
 ### ItemConfig
 
@@ -73,6 +79,17 @@ The `renderItem` function receives an `ItemConfig` object with:
 | `gridIndex` | `number` | Unique index for the grid cell |
 | `position` | `Position` | Grid coordinates `{ x: number, y: number }` |
 | `isMoving` | `boolean` | Whether the grid is currently being moved/scrolled |
+| `colSpan` | `number` | Number of columns this cell spans (≥ 1) |
+| `rowSpan` | `number` | Number of rows this cell spans (≥ 1) |
+
+### CellSpan
+
+```tsx
+type CellSpan = {
+  colSpan: number; // columns to span rightward (≥ 1)
+  rowSpan: number; // rows to span downward (≥ 1)
+};
+```
 
 ### Position
 
@@ -83,12 +100,25 @@ type Position = {
 };
 ```
 
+### Utility Functions
+
+```tsx
+import { colSpanForWidth, rowSpanForHeight } from './FlexibleThiingsGrid';
+
+// Returns the colSpan that best fits an image of naturalWidth pixels
+// within a grid cell of gridSize pixels (uses Math.round)
+colSpanForWidth(naturalWidth: number, gridSize: number): number
+
+// Returns the rowSpan that best fits an image of naturalHeight pixels
+rowSpanForHeight(naturalHeight: number, gridSize: number): number
+```
+
 ## 🎨 Examples
 
 ### Simple Numbers
 
 ```tsx
-import ThiingsGrid, { type ItemConfig } from "./ThiingsGrid";
+import FlexibleThiingsGrid, { type ItemConfig } from "./FlexibleThiingsGrid";
 
 const SimpleNumberCell = ({ gridIndex }: ItemConfig) => (
   <div className="absolute inset-1 flex items-center justify-center bg-blue-50 border border-blue-500 rounded text-sm font-bold text-blue-800">
@@ -97,7 +127,7 @@ const SimpleNumberCell = ({ gridIndex }: ItemConfig) => (
 );
 
 export const SimpleNumbers = () => (
-  <ThiingsGrid
+  <FlexibleThiingsGrid
     gridSize={80}
     renderItem={SimpleNumberCell}
     initialPosition={{ x: 0, y: 0 }}
@@ -127,7 +157,7 @@ const ColorfulCell = ({ gridIndex }: ItemConfig) => {
 };
 
 export const ColorfulGrid = () => (
-  <ThiingsGrid gridSize={100} renderItem={ColorfulCell} />
+  <FlexibleThiingsGrid gridSize={100} renderItem={ColorfulCell} />
 );
 ```
 
@@ -146,12 +176,74 @@ const CardCell = ({ gridIndex, position, isMoving }: ItemConfig) => (
 );
 
 export const CardLayout = () => (
-  <ThiingsGrid
+  <FlexibleThiingsGrid
     gridSize={150}
     renderItem={CardCell}
   />
 );
 ```
+
+### Variable Cell Sizes
+
+Cells can span multiple columns and/or rows via the `getSpan` prop. Spans grow rightward (+x) and downward (+y) from the anchor cell. Cells covered by a spanning neighbour are automatically suppressed.
+
+```tsx
+import FlexibleThiingsGrid, {
+  type ItemConfig,
+  type CellSpan,
+  colSpanForWidth,
+  rowSpanForHeight,
+} from "./FlexibleThiingsGrid";
+
+// Pre-compute spans from static image metadata
+const GRID_SIZE = 100;
+const images = [
+  { src: "/img/wide.jpg",   width: 320, height: 180 }, // landscape → 3×2
+  { src: "/img/square.jpg", width: 100, height: 100 }, // square    → 1×1
+  { src: "/img/tall.jpg",   width: 100, height: 220 }, // portrait  → 1×2
+  // ...up to 30 images
+];
+
+const SPANS: CellSpan[] = images.map(({ width, height }) => ({
+  colSpan: colSpanForWidth(width, GRID_SIZE),
+  rowSpan: rowSpanForHeight(height, GRID_SIZE),
+}));
+
+const ImageCell = ({ gridIndex, colSpan, rowSpan }: ItemConfig) => {
+  const img = images[gridIndex % images.length];
+  return (
+    <div className="absolute inset-1 overflow-hidden rounded-lg">
+      <img
+        src={img.src}
+        className="w-full h-full object-cover"
+        draggable={false}
+      />
+      <div className="absolute bottom-1 right-1 text-[9px] text-white/70">
+        {colSpan}×{rowSpan}
+      </div>
+    </div>
+  );
+};
+
+export const VariableGrid = () => (
+  <FlexibleThiingsGrid
+    gridSize={GRID_SIZE}
+    getSpan={(pos) => {
+      const idx = /* your index fn */(pos.x, pos.y) % images.length;
+      return SPANS[idx];
+    }}
+    renderItem={ImageCell}
+  />
+);
+```
+
+#### Span rules
+
+- **Direction**: spans extend rightward (`colSpan`) and downward (`rowSpan`) from the anchor position
+- **Conflicts**: if two spans overlap, the top-left anchor (earlier in left-to-right, top-down scan order) wins
+- **Covered cells**: positions inside a spanning cell's footprint are skipped before `getSpan` is called — they cannot claim their own span and cascade coverage onto further neighbours
+- **Max span**: clamped internally to 20 in each direction
+- **Default**: when `getSpan` is omitted, all cells are 1×1 — identical behaviour to before
 
 ## 🎯 Best Practices
 
@@ -196,17 +288,17 @@ const OptimizedCell = React.memo(({ gridIndex, isMoving }: ItemConfig) => {
 
 ### Container Setup
 
-Ensure the ThiingsGrid has a defined container size:
+Ensure the FlexibleThiingsGrid has a defined container size:
 
 ```tsx
 // ✅ Good - explicit container size
 <div style={{ width: '100vw', height: '100vh' }}>
-  <ThiingsGrid gridSize={80} renderItem={MyCell} />
+  <FlexibleThiingsGrid gridSize={80} renderItem={MyCell} />
 </div>
 
 // ✅ Good - CSS classes with defined dimensions
 <div className="w-screen h-screen">
-  <ThiingsGrid gridSize={80} renderItem={MyCell} />
+  <FlexibleThiingsGrid gridSize={80} renderItem={MyCell} />
 </div>
 ```
 
@@ -222,7 +314,7 @@ You can access the current grid position programmatically:
 
 ```tsx
 const MyComponent = () => {
-  const gridRef = useRef<ThiingsGrid>(null);
+  const gridRef = useRef<FlexibleThiingsGrid>(null);
 
   const getCurrentPosition = () => {
     if (gridRef.current) {
@@ -232,7 +324,7 @@ const MyComponent = () => {
   };
 
   return (
-    <ThiingsGrid
+    <FlexibleThiingsGrid
       ref={gridRef}
       gridSize={80}
       renderItem={MyCell}
@@ -271,7 +363,7 @@ const ResponsiveGrid = () => {
   const gridSize = useResponsiveGridSize();
   
   return (
-    <ThiingsGrid
+    <FlexibleThiingsGrid
       gridSize={gridSize}
       renderItem={MyCell}
     />
@@ -319,7 +411,7 @@ src/
 └── Sidebar.tsx        # Example navigation
 
 lib/
-└── ThiingsGrid.tsx    # Main component
+└── FlexibleFlexibleThiingsGrid.tsx    # Main component
 ```
 
 ## 🤝 Contributing
