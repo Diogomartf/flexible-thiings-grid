@@ -82,6 +82,11 @@ function getDistance(p1: Position, p2: Position) {
   return Math.sqrt(dx * dx + dy * dy);
 }
 
+// Collision-free integer key for grid coordinates within ±100 000 cells — no string allocation.
+function cellKey(x: number, y: number): number {
+  return (x + 100_000) * 200_001 + (y + 100_000);
+}
+
 export type Position = {
   x: number;
   y: number;
@@ -259,7 +264,7 @@ class FlexibleThiingsGrid extends Component<FlexibleThiingsGridProps, State> {
     return this.props.gap ?? 0;
   }
 
-  private calculateVisiblePositions = (): Position[] | null => {
+  private calculateVisiblePositions = (offset: Position = this.state.offset): Position[] | null => {
     const width = this.cachedWidth;
     const height = this.cachedHeight;
     if (width === 0 && height === 0) return null;
@@ -267,8 +272,8 @@ class FlexibleThiingsGrid extends Component<FlexibleThiingsGridProps, State> {
     const step = this.props.gridSize + this.effectiveGap;
 
     // Calculate center position based on offset
-    const centerX = -Math.round(this.state.offset.x / step);
-    const centerY = -Math.round(this.state.offset.y / step);
+    const centerX = -Math.round(offset.x / step);
+    const centerY = -Math.round(offset.y / step);
 
     // Skip recalculation if the grid center hasn't moved to a new cell
     if (
@@ -362,31 +367,20 @@ class FlexibleThiingsGrid extends Component<FlexibleThiingsGridProps, State> {
     this.setState({ isMoving: false, restPos: { ...this.state.offset } });
   }, 200);
 
-  private updateGridItems = () => {
-    if (!this.isComponentMounted) return;
+  // Pure computation — safe to call with a pre-setState offset (e.g. from handleMove).
+  // Returns null when the grid center hasn't moved to a new cell (no rebuild needed).
+  private buildGridItems = (offset: Position): { gridItems: GridItem[]; isMoving: boolean } | null => {
+    const positions = this.calculateVisiblePositions(offset);
+    if (positions === null) return null;
 
-    const positions = this.calculateVisiblePositions();
-    if (positions === null) {
-      // Grid center cell unchanged — skip expensive re-render
-      const distanceFromRest = getDistance(
-        this.state.offset,
-        this.state.restPos,
-      );
-      const isMoving = distanceFromRest > 5;
-      if (isMoving !== this.state.isMoving) {
-        this.setState({ isMoving });
-      }
-      this.debouncedStopMoving();
-      return;
-    }
-
-    // Pass 1: resolve spans once per position, build covered-cell set, and track max span.
-    const spanCache = new Map<string, CellSpan>();
-    const coveredSet = new Set<string>();
+    // Pass 1: resolve spans, build covered-cell set, track max span.
+    // Uses integer keys to avoid string allocation on every visible cell.
+    const spanCache = new Map<number, CellSpan>();
+    const coveredSet = new Set<number>();
     let maxSpanSeen = 1;
 
     for (const position of positions) {
-      const key = `${position.x},${position.y}`;
+      const key = cellKey(position.x, position.y);
       if (coveredSet.has(key)) continue; // suppressed by a previous anchor — skip
       const span = this.getSpanForPosition(position);
       spanCache.set(key, span);
@@ -399,7 +393,7 @@ class FlexibleThiingsGrid extends Component<FlexibleThiingsGridProps, State> {
       for (let dy = 0; dy < rowSpan; dy++) {
         for (let dx = 0; dx < colSpan; dx++) {
           if (dx === 0 && dy === 0) continue;
-          coveredSet.add(`${position.x + dx},${position.y + dy}`);
+          coveredSet.add(cellKey(position.x + dx, position.y + dy));
         }
       }
     }
@@ -412,17 +406,29 @@ class FlexibleThiingsGrid extends Component<FlexibleThiingsGridProps, State> {
     // Pass 2: build gridItems, skipping covered positions.
     const newItems: GridItem[] = [];
     for (const position of positions) {
-      const key = `${position.x},${position.y}`;
+      const key = cellKey(position.x, position.y);
       if (coveredSet.has(key)) continue;
       const gridIndex = this.getItemIndexForPosition(position.x, position.y);
       const { colSpan, rowSpan } = spanCache.get(key)!;
       newItems.push({ position, gridIndex, colSpan, rowSpan });
     }
 
-    const distanceFromRest = getDistance(this.state.offset, this.state.restPos);
+    const distanceFromRest = getDistance(offset, this.state.restPos);
+    return { gridItems: newItems, isMoving: distanceFromRest > 5 };
+  };
 
-    this.setState({ gridItems: newItems, isMoving: distanceFromRest > 5 });
+  private updateGridItems = () => {
+    if (!this.isComponentMounted) return;
 
+    const result = this.buildGridItems(this.state.offset);
+    if (result === null) {
+      // Grid center unchanged — no layout rebuild needed. debouncedStopMoving handles
+      // the isMoving: false transition; no extra setState required here.
+      this.debouncedStopMoving();
+      return;
+    }
+
+    this.setState(result);
     this.debouncedStopMoving();
   };
 
@@ -500,38 +506,38 @@ class FlexibleThiingsGrid extends Component<FlexibleThiingsGridProps, State> {
     };
 
     const velocityHistory = [...this.state.velocityHistory, rawVelocity];
-    if (velocityHistory.length > VELOCITY_HISTORY_SIZE) {
-      velocityHistory.shift();
-    }
+    if (velocityHistory.length > VELOCITY_HISTORY_SIZE) velocityHistory.shift();
 
     let totalWeight = 0;
     const smoothedVelocity = velocityHistory.reduce(
       (acc, vel, i) => {
         const weight = Math.pow(2, i);
         totalWeight += weight;
-        return {
-          x: acc.x + vel.x * weight,
-          y: acc.y + vel.y * weight,
-        };
+        return { x: acc.x + vel.x * weight, y: acc.y + vel.y * weight };
       },
       { x: 0, y: 0 },
     );
     smoothedVelocity.x /= totalWeight;
     smoothedVelocity.y /= totalWeight;
 
-    this.setState(
-      {
-        velocity: smoothedVelocity,
-        offset: {
-          x: p.x - this.state.startPos.x,
-          y: p.y - this.state.startPos.y,
-        },
-        lastMoveTime: currentTime,
-        velocityHistory,
-      },
-      this.updateGridItems,
-    );
+    const newOffset = {
+      x: p.x - this.state.startPos.x,
+      y: p.y - this.state.startPos.y,
+    };
 
+    // Compute grid items with the new offset before setState — collapses two render
+    // cycles (offset update + grid rebuild) into one.
+    const gridResult = this.buildGridItems(newOffset);
+
+    this.setState({
+      velocity: smoothedVelocity,
+      offset: newOffset,
+      lastMoveTime: currentTime,
+      velocityHistory,
+      ...(gridResult ?? {}),
+    });
+
+    this.debouncedStopMoving();
     this.lastPos = { x: p.x, y: p.y };
   };
 
