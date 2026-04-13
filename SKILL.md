@@ -22,6 +22,8 @@ Given a set of display requirements (what to show, how cells should be sized, an
 
 FlexibleThiingsGrid ships as a **single file** — copy it, do not install a package.
 
+> **Next.js users**: the component uses browser-only APIs (touch/mouse events, `requestAnimationFrame`). Add `"use client"` at the top of any file that imports it, or wrap it in your own client component.
+
 ```bash
 cp lib/FlexibleThiingsGrid.tsx your-project/components/FlexibleThiingsGrid.tsx
 ```
@@ -57,7 +59,7 @@ import FlexibleThiingsGrid, {
 - Pre-compute spans from static data before render — do not derive spans inside `renderItem`.
 - `getSpan` must be a stable reference (wrap in `useCallback` or define outside the component) to avoid unnecessary grid recalculations.
 - Spans grow **rightward** (+x) and **downward** (+y) from the anchor cell.
-- Cells covered by a spanning neighbour are automatically suppressed — do not render placeholders.
+- Cells covered by a spanning neighbour are automatically suppressed in **both** passes — span resolution (Pass 1) and rendering (Pass 2). Covered positions are skipped before `getSpan` is called, so they cannot cascade phantom coverage onto their neighbours.
 - `scrollTo` is cancelled when the user starts dragging. Always check if `ref.current` exists before calling it.
 - `gap` is folded into spanning cell widths automatically — do not compensate manually.
 

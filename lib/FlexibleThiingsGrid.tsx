@@ -11,9 +11,9 @@ const SPAN_OVERSCAN = 3; // Extra cells scanned beyond viewport edges for spanni
 // Custom debounce implementation
 function debounce<T extends (...args: unknown[]) => unknown>(
   func: T,
-  wait: number
+  wait: number,
 ) {
-  let timeoutId: number | undefined = undefined;
+  let timeoutId: ReturnType<typeof setTimeout> | undefined = undefined;
 
   const debouncedFn = function (...args: Parameters<T>) {
     if (timeoutId) {
@@ -37,10 +37,10 @@ function debounce<T extends (...args: unknown[]) => unknown>(
 function throttle<T extends (...args: unknown[]) => unknown>(
   func: T,
   limit: number,
-  options: { leading?: boolean; trailing?: boolean } = {}
+  options: { leading?: boolean; trailing?: boolean } = {},
 ) {
   let lastCall = 0;
-  let timeoutId: number | undefined = undefined;
+  let timeoutId: ReturnType<typeof setTimeout> | undefined = undefined;
   const { leading = true, trailing = true } = options;
 
   const throttledFn = function (...args: Parameters<T>) {
@@ -142,7 +142,7 @@ class FlexibleThiingsGrid extends Component<FlexibleThiingsGridProps, State> {
   private scrollToStartTime: number;
   private readonly SCROLL_TO_DURATION = 600; // ms
 
-  constructor(props: ThiingsGridProps) {
+  constructor(props: FlexibleThiingsGridProps) {
     super(props);
     const offset = this.props.initialPosition || { x: 0, y: 0 };
     this.state = {
@@ -174,7 +174,7 @@ class FlexibleThiingsGrid extends Component<FlexibleThiingsGridProps, State> {
       {
         leading: true,
         trailing: true,
-      }
+      },
     );
   }
 
@@ -191,14 +191,14 @@ class FlexibleThiingsGrid extends Component<FlexibleThiingsGridProps, State> {
       this.containerRef.current.addEventListener(
         "touchmove",
         this.handleTouchMove,
-        { passive: false }
+        { passive: false },
       );
     }
 
     window.addEventListener("resize", this.handleResize);
   }
 
-  componentDidUpdate(prevProps: ThiingsGridProps, prevState: State) {
+  componentDidUpdate(prevProps: FlexibleThiingsGridProps, prevState: State) {
     if (prevProps.getSpan !== this.props.getSpan) {
       this.maxObservedSpan = 1; // reset so overscan re-calibrates for new getSpan
       this.lastGridCenter = { x: Infinity, y: Infinity };
@@ -232,7 +232,7 @@ class FlexibleThiingsGrid extends Component<FlexibleThiingsGridProps, State> {
       this.containerRef.current.removeEventListener("wheel", this.handleWheel);
       this.containerRef.current.removeEventListener(
         "touchmove",
-        this.handleTouchMove
+        this.handleTouchMove,
       );
     }
   }
@@ -293,8 +293,16 @@ class FlexibleThiingsGrid extends Component<FlexibleThiingsGridProps, State> {
       ? Math.max(SPAN_OVERSCAN, this.maxObservedSpan - 1)
       : 0;
 
-    for (let y = centerY - halfCellsY - overscan; y <= centerY + halfCellsY + overscan; y++) {
-      for (let x = centerX - halfCellsX - overscan; x <= centerX + halfCellsX + overscan; x++) {
+    for (
+      let y = centerY - halfCellsY - overscan;
+      y <= centerY + halfCellsY + overscan;
+      y++
+    ) {
+      for (
+        let x = centerX - halfCellsX - overscan;
+        x <= centerX + halfCellsX + overscan;
+        x++
+      ) {
         positions.push({ x, y });
       }
     }
@@ -362,7 +370,7 @@ class FlexibleThiingsGrid extends Component<FlexibleThiingsGridProps, State> {
       // Grid center cell unchanged — skip expensive re-render
       const distanceFromRest = getDistance(
         this.state.offset,
-        this.state.restPos
+        this.state.restPos,
       );
       const isMoving = distanceFromRest > 5;
       if (isMoving !== this.state.isMoving) {
@@ -373,14 +381,13 @@ class FlexibleThiingsGrid extends Component<FlexibleThiingsGridProps, State> {
     }
 
     // Pass 1: resolve spans once per position, build covered-cell set, and track max span.
-    // Positions are scanned row-by-row, left-to-right, so a top-left anchor is always
-    // processed before the cells it covers — first anchor in scan order wins.
     const spanCache = new Map<string, CellSpan>();
     const coveredSet = new Set<string>();
     let maxSpanSeen = 1;
 
     for (const position of positions) {
       const key = `${position.x},${position.y}`;
+      if (coveredSet.has(key)) continue; // suppressed by a previous anchor — skip
       const span = this.getSpanForPosition(position);
       spanCache.set(key, span);
 
@@ -388,22 +395,21 @@ class FlexibleThiingsGrid extends Component<FlexibleThiingsGridProps, State> {
       const localMax = Math.max(colSpan, rowSpan);
       if (localMax > maxSpanSeen) maxSpanSeen = localMax;
 
-      if (colSpan === 1 && rowSpan === 1) continue; // fast-path for default case
+      if (colSpan === 1 && rowSpan === 1) continue;
       for (let dy = 0; dy < rowSpan; dy++) {
         for (let dx = 0; dx < colSpan; dx++) {
-          if (dx === 0 && dy === 0) continue; // anchor itself is never covered
+          if (dx === 0 && dy === 0) continue;
           coveredSet.add(`${position.x + dx},${position.y + dy}`);
         }
       }
     }
 
-    // If a larger span was seen, expand overscan for the next recalculation.
     if (maxSpanSeen > this.maxObservedSpan) {
       this.maxObservedSpan = maxSpanSeen;
-      this.lastGridCenter = { x: Infinity, y: Infinity }; // force rescan with wider overscan
+      this.lastGridCenter = { x: Infinity, y: Infinity };
     }
 
-    // Pass 2: build gridItems, skipping covered positions. Reuse cached spans.
+    // Pass 2: build gridItems, skipping covered positions.
     const newItems: GridItem[] = [];
     for (const position of positions) {
       const key = `${position.x},${position.y}`;
@@ -429,7 +435,7 @@ class FlexibleThiingsGrid extends Component<FlexibleThiingsGridProps, State> {
     if (deltaTime >= UPDATE_INTERVAL) {
       const { velocity } = this.state;
       const speed = Math.sqrt(
-        velocity.x * velocity.x + velocity.y * velocity.y
+        velocity.x * velocity.x + velocity.y * velocity.y,
       );
 
       if (speed < MIN_VELOCITY) {
@@ -437,10 +443,7 @@ class FlexibleThiingsGrid extends Component<FlexibleThiingsGridProps, State> {
         return;
       }
 
-      // Time-based friction: friction^deltaTime gives frame-rate independence
       const deceleration = Math.pow(FRICTION, deltaTime);
-
-      // Scale position change by deltaTime for smooth, frame-rate-independent motion
       const dt = deltaTime / UPDATE_INTERVAL;
 
       this.setState(
@@ -454,7 +457,7 @@ class FlexibleThiingsGrid extends Component<FlexibleThiingsGridProps, State> {
             y: prevState.velocity.y * deceleration,
           },
         }),
-        this.debouncedUpdateGridItems
+        this.debouncedUpdateGridItems,
       );
 
       this.lastUpdateTime = currentTime;
@@ -484,37 +487,34 @@ class FlexibleThiingsGrid extends Component<FlexibleThiingsGridProps, State> {
 
     this.lastPos = { x: p.x, y: p.y };
   };
+
   private handleMove = (p: Position) => {
     if (!this.state.isDragging) return;
 
     const currentTime = performance.now();
     const timeDelta = currentTime - this.state.lastMoveTime;
 
-    // Calculate raw velocity based on position and time
     const rawVelocity = {
       x: (p.x - this.lastPos.x) / (timeDelta || 1),
       y: (p.y - this.lastPos.y) / (timeDelta || 1),
     };
 
-    // Add to velocity history and maintain fixed size
     const velocityHistory = [...this.state.velocityHistory, rawVelocity];
     if (velocityHistory.length > VELOCITY_HISTORY_SIZE) {
       velocityHistory.shift();
     }
 
-    // Calculate smoothed velocity using recency-weighted average
-    // More recent samples get exponentially higher weight
     let totalWeight = 0;
     const smoothedVelocity = velocityHistory.reduce(
       (acc, vel, i) => {
-        const weight = Math.pow(2, i); // 1, 2, 4, 8, 16...
+        const weight = Math.pow(2, i);
         totalWeight += weight;
         return {
           x: acc.x + vel.x * weight,
           y: acc.y + vel.y * weight,
         };
       },
-      { x: 0, y: 0 }
+      { x: 0, y: 0 },
     );
     smoothedVelocity.x /= totalWeight;
     smoothedVelocity.y /= totalWeight;
@@ -529,13 +529,13 @@ class FlexibleThiingsGrid extends Component<FlexibleThiingsGridProps, State> {
         lastMoveTime: currentTime,
         velocityHistory,
       },
-      this.updateGridItems
+      this.updateGridItems,
     );
 
     this.lastPos = { x: p.x, y: p.y };
   };
+
   private handleUp = () => {
-    // Discard velocity if the last move was too long ago (finger rested before release)
     const timeSinceLastMove = performance.now() - this.state.lastMoveTime;
     const velocity =
       timeSinceLastMove > 100
@@ -559,10 +559,13 @@ class FlexibleThiingsGrid extends Component<FlexibleThiingsGridProps, State> {
     this.scrollToStart = null;
 
     if (!animated) {
-      this.setState({ offset: { ...position }, velocity: { x: 0, y: 0 } }, () => {
-        this.lastGridCenter = { x: Infinity, y: Infinity };
-        this.updateGridItems();
-      });
+      this.setState(
+        { offset: { ...position }, velocity: { x: 0, y: 0 } },
+        () => {
+          this.lastGridCenter = { x: Infinity, y: Infinity };
+          this.updateGridItems();
+        },
+      );
       return;
     }
 
@@ -576,13 +579,19 @@ class FlexibleThiingsGrid extends Component<FlexibleThiingsGridProps, State> {
     if (!this.scrollToTarget || !this.scrollToStart) return;
     const elapsed = performance.now() - this.scrollToStartTime;
     const t = Math.min(elapsed / this.SCROLL_TO_DURATION, 1);
-    // Cubic ease-in-out
     const ease = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
     const offset = {
-      x: this.scrollToStart.x + (this.scrollToTarget.x - this.scrollToStart.x) * ease,
-      y: this.scrollToStart.y + (this.scrollToTarget.y - this.scrollToStart.y) * ease,
+      x:
+        this.scrollToStart.x +
+        (this.scrollToTarget.x - this.scrollToStart.x) * ease,
+      y:
+        this.scrollToStart.y +
+        (this.scrollToTarget.y - this.scrollToStart.y) * ease,
     };
-    this.setState({ offset, velocity: { x: 0, y: 0 } }, this.debouncedUpdateGridItems);
+    this.setState(
+      { offset, velocity: { x: 0, y: 0 } },
+      this.debouncedUpdateGridItems,
+    );
     if (t < 1) {
       this.animationFrame = requestAnimationFrame(this.animateScrollTo);
     } else {
@@ -593,18 +602,12 @@ class FlexibleThiingsGrid extends Component<FlexibleThiingsGridProps, State> {
   };
 
   private handleMouseDown = (e: React.MouseEvent) => {
-    this.handleDown({
-      x: e.clientX,
-      y: e.clientY,
-    });
+    this.handleDown({ x: e.clientX, y: e.clientY });
   };
 
   private handleMouseMove = (e: React.MouseEvent) => {
     e.preventDefault();
-    this.handleMove({
-      x: e.clientX,
-      y: e.clientY,
-    });
+    this.handleMove({ x: e.clientX, y: e.clientY });
   };
 
   private handleMouseUp = () => {
@@ -613,25 +616,15 @@ class FlexibleThiingsGrid extends Component<FlexibleThiingsGridProps, State> {
 
   private handleTouchStart = (e: React.TouchEvent) => {
     const touch = e.touches[0];
-
     if (!touch) return;
-
-    this.handleDown({
-      x: touch.clientX,
-      y: touch.clientY,
-    });
+    this.handleDown({ x: touch.clientX, y: touch.clientY });
   };
 
   private handleTouchMove = (e: TouchEvent) => {
     const touch = e.touches[0];
-
     if (!touch) return;
-
     e.preventDefault();
-    this.handleMove({
-      x: touch.clientX,
-      y: touch.clientY,
-    });
+    this.handleMove({ x: touch.clientX, y: touch.clientY });
   };
 
   private handleTouchEnd = () => {
@@ -640,20 +633,15 @@ class FlexibleThiingsGrid extends Component<FlexibleThiingsGridProps, State> {
 
   private handleWheel = (e: WheelEvent) => {
     e.preventDefault();
-
-    // Get the scroll deltas
-    const deltaX = e.deltaX;
-    const deltaY = e.deltaY;
-
     this.setState(
       (prevState) => ({
         offset: {
-          x: prevState.offset.x - deltaX,
-          y: prevState.offset.y - deltaY,
+          x: prevState.offset.x - e.deltaX,
+          y: prevState.offset.y - e.deltaY,
         },
-        velocity: { x: 0, y: 0 }, // Reset velocity when scrolling
+        velocity: { x: 0, y: 0 },
       }),
-      this.debouncedUpdateGridItems
+      this.debouncedUpdateGridItems,
     );
   };
 
@@ -696,9 +684,10 @@ class FlexibleThiingsGrid extends Component<FlexibleThiingsGridProps, State> {
             const step = gridSize + gap;
             const x = item.position.x * step + containerWidth / 2;
             const y = item.position.y * step + containerHeight / 2;
-            // For spanning cells, include the gaps between the spanned cell units
-            const cellWidth = gridSize * item.colSpan + gap * (item.colSpan - 1);
-            const cellHeight = gridSize * item.rowSpan + gap * (item.rowSpan - 1);
+            const cellWidth =
+              gridSize * item.colSpan + gap * (item.colSpan - 1);
+            const cellHeight =
+              gridSize * item.rowSpan + gap * (item.rowSpan - 1);
 
             return (
               <div
@@ -734,10 +723,12 @@ class FlexibleThiingsGrid extends Component<FlexibleThiingsGridProps, State> {
 
 /**
  * Returns the colSpan needed to fit an image of the given natural width
- * within a grid of the given cell size. Uses Math.round so a 150px image
- * on a 100px grid maps to colSpan 2 rather than always rounding up.
+ * within a grid of the given cell size.
  */
-export function colSpanForWidth(naturalWidth: number, gridSize: number): number {
+export function colSpanForWidth(
+  naturalWidth: number,
+  gridSize: number,
+): number {
   if (gridSize <= 0) return 1;
   return Math.max(1, Math.round(naturalWidth / gridSize));
 }
@@ -746,7 +737,10 @@ export function colSpanForWidth(naturalWidth: number, gridSize: number): number 
  * Returns the rowSpan needed to fit an image of the given natural height
  * within a grid of the given cell size.
  */
-export function rowSpanForHeight(naturalHeight: number, gridSize: number): number {
+export function rowSpanForHeight(
+  naturalHeight: number,
+  gridSize: number,
+): number {
   if (gridSize <= 0) return 1;
   return Math.max(1, Math.round(naturalHeight / gridSize));
 }

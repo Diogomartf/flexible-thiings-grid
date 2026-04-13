@@ -21,7 +21,7 @@ git push origin main
 
 ### 3. Your Site Will Be Available At:
 ```
-https://[your-username].github.io/thiings-grid/
+https://[your-username].github.io/flexible-thiings-grid/
 ```
 
 ## How It Works

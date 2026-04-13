@@ -116,6 +116,7 @@ ref.current.scrollTo(position: Position, animated?: boolean): void
 | `gridIndex` | Assigned via a spiral algorithm: 0 = (0,0), 1 = (1,0), 2 = (1,−1), … Unique per grid coordinate. |
 | Momentum | `FRICTION = 0.997` per ms, `VELOCITY_SCALE = 16`. Momentum is frame-rate independent. |
 | `getSpan` changes | Detected in `componentDidUpdate`; triggers `maxObservedSpan` reset + forced grid recalc. |
+| Pass 1 covered-cell skip | `updateGridItems` Pass 1 checks `coveredSet.has(key)` before calling `getSpan`. Skipping covered positions prevents them from marking additional cells as covered and cascading into layout gaps. |
 
 ---
 

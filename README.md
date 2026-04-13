@@ -2,6 +2,8 @@
 
 FlexibleThiingsGrid is a fork of [charlieclark/thiings-grid](https://github.com/charlieclark/thiings-grid) — the component that powers the infinite icon grid on Thiings.co. It keeps everything that makes the original great and adds one core capability: cells that span multiple columns and rows.
 
+![Variable spans demo](public/variable-spans-demo.png)
+
 ## 🪩 [**Explore Thiings.co →**](https://thiings.co)
 
 > This is the component that powers the interactive grid on [thiings.co](https://thiings.co/) - A growing collection of 1200+ free 3D icons, generated with AI.
@@ -26,12 +28,14 @@ FlexibleThiingsGrid is a fork of [charlieclark/thiings-grid](https://github.com/
 
 This component is currently part of this repository. To use it in your project:
 
-1. Copy the `lib/FlexibleFlexibleThiingsGrid.tsx` file to your project
+1. Copy the `lib/FlexibleThiingsGrid.tsx` file to your project
 2. Install the required dependencies:
 
 ```bash
 npm install react react-dom
 ```
+
+> **Next.js users**: the component uses browser-only APIs. Add `"use client"` at the top of any file that imports it, or wrap it in your own client component.
 
 ### Basic Usage
 
@@ -237,6 +241,7 @@ export const VariableGrid = () => (
 
 - **Direction**: spans extend rightward (`colSpan`) and downward (`rowSpan`) from the anchor position
 - **Conflicts**: if two spans overlap, the top-left anchor (earlier in left-to-right, top-down scan order) wins
+- **Covered cells**: positions inside a spanning cell's footprint are skipped before `getSpan` is called — they cannot claim their own span and cascade coverage onto further neighbours
 - **Max span**: clamped internally to 20 in each direction
 - **Default**: when `getSpan` is omitted, all cells are 1×1 — identical behaviour to before
 
