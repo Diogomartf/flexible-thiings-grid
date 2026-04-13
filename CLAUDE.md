@@ -21,11 +21,13 @@ export type ItemConfig = {
   rowSpan:   number;   // resolved row span (≥ 1)
 };
 export type ThiingsGridProps = {
-  gridSize:         number;                              // px per cell unit
-  renderItem:       (config: ItemConfig) => ReactNode;
-  className?:       string;
-  initialPosition?: Position;                            // default { x:0, y:0 }
-  getSpan?:         (position: Position) => CellSpan;   // default () => {1,1}
+  gridSize:           number;                              // px per cell unit
+  renderItem:         (config: ItemConfig) => ReactNode;
+  className?:         string;
+  initialPosition?:   Position;                            // default { x:0, y:0 }
+  getSpan?:           (position: Position) => CellSpan;   // default () => {1,1}
+  gap?:               number;                              // px between cells, default 0
+  onPositionChange?:  (position: Position) => void;       // fires on every offset change
 };
 
 // Utility functions
@@ -99,8 +101,8 @@ const ref = React.createRef<ThiingsGrid>();
 // Read current pixel offset
 ref.current.publicGetCurrentPosition(): Position
 
-// Programmatic navigation (not yet implemented — planned)
-// ref.current.scrollTo(position: Position, animated?: boolean): void
+// Programmatic navigation — jumps instantly or animates with cubic ease-in-out (600 ms)
+ref.current.scrollTo(position: Position, animated?: boolean): void
 ```
 
 ---

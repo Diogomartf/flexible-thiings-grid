@@ -122,6 +122,8 @@ export type ThiingsGridProps = {
   className?: string;
   initialPosition?: Position;
   getSpan?: (position: Position) => CellSpan;
+  gap?: number;
+  onPositionChange?: (position: Position) => void;
 };
 
 class ThiingsGrid extends Component<ThiingsGridProps, State> {
@@ -135,6 +137,10 @@ class ThiingsGrid extends Component<ThiingsGridProps, State> {
   private cachedHeight: number;
   private lastGridCenter: Position;
   private maxObservedSpan: number;
+  private scrollToTarget: Position | null;
+  private scrollToStart: Position | null;
+  private scrollToStartTime: number;
+  private readonly SCROLL_TO_DURATION = 600; // ms
 
   constructor(props: ThiingsGridProps) {
     super(props);
@@ -159,6 +165,9 @@ class ThiingsGrid extends Component<ThiingsGridProps, State> {
     this.cachedHeight = 0;
     this.lastGridCenter = { x: Infinity, y: Infinity };
     this.maxObservedSpan = 1;
+    this.scrollToTarget = null;
+    this.scrollToStart = null;
+    this.scrollToStartTime = 0;
     this.debouncedUpdateGridItems = throttle(
       this.updateGridItems,
       UPDATE_INTERVAL,
@@ -189,11 +198,22 @@ class ThiingsGrid extends Component<ThiingsGridProps, State> {
     window.addEventListener("resize", this.handleResize);
   }
 
-  componentDidUpdate(prevProps: ThiingsGridProps) {
+  componentDidUpdate(prevProps: ThiingsGridProps, prevState: State) {
     if (prevProps.getSpan !== this.props.getSpan) {
       this.maxObservedSpan = 1; // reset so overscan re-calibrates for new getSpan
       this.lastGridCenter = { x: Infinity, y: Infinity };
       this.updateGridItems();
+    }
+    if (prevProps.gap !== this.props.gap) {
+      this.lastGridCenter = { x: Infinity, y: Infinity };
+      this.updateGridItems();
+    }
+    if (
+      this.props.onPositionChange &&
+      (prevState.offset.x !== this.state.offset.x ||
+        prevState.offset.y !== this.state.offset.y)
+    ) {
+      this.props.onPositionChange(this.state.offset);
     }
   }
 
@@ -235,14 +255,20 @@ class ThiingsGrid extends Component<ThiingsGridProps, State> {
     return this.state.offset;
   };
 
+  private get effectiveGap(): number {
+    return this.props.gap ?? 0;
+  }
+
   private calculateVisiblePositions = (): Position[] | null => {
     const width = this.cachedWidth;
     const height = this.cachedHeight;
     if (width === 0 && height === 0) return null;
 
+    const step = this.props.gridSize + this.effectiveGap;
+
     // Calculate center position based on offset
-    const centerX = -Math.round(this.state.offset.x / this.props.gridSize);
-    const centerY = -Math.round(this.state.offset.y / this.props.gridSize);
+    const centerX = -Math.round(this.state.offset.x / step);
+    const centerY = -Math.round(this.state.offset.y / step);
 
     // Skip recalculation if the grid center hasn't moved to a new cell
     if (
@@ -254,8 +280,8 @@ class ThiingsGrid extends Component<ThiingsGridProps, State> {
     this.lastGridCenter = { x: centerX, y: centerY };
 
     // Calculate grid cells needed to fill container
-    const cellsX = Math.ceil(width / this.props.gridSize);
-    const cellsY = Math.ceil(height / this.props.gridSize);
+    const cellsX = Math.ceil(width / step);
+    const cellsY = Math.ceil(height / step);
 
     const positions: Position[] = [];
     const halfCellsX = Math.ceil(cellsX / 2);
@@ -442,6 +468,8 @@ class ThiingsGrid extends Component<ThiingsGridProps, State> {
       cancelAnimationFrame(this.animationFrame);
       this.animationFrame = null;
     }
+    this.scrollToTarget = null;
+    this.scrollToStart = null;
 
     this.setState({
       isDragging: true,
@@ -520,6 +548,48 @@ class ThiingsGrid extends Component<ThiingsGridProps, State> {
     this.lastUpdateTime = performance.now();
     this.setState({ isDragging: false, velocity });
     this.animationFrame = requestAnimationFrame(this.animate);
+  };
+
+  public scrollTo = (position: Position, animated = false): void => {
+    if (this.animationFrame) {
+      cancelAnimationFrame(this.animationFrame);
+      this.animationFrame = null;
+    }
+    this.scrollToTarget = null;
+    this.scrollToStart = null;
+
+    if (!animated) {
+      this.setState({ offset: { ...position }, velocity: { x: 0, y: 0 } }, () => {
+        this.lastGridCenter = { x: Infinity, y: Infinity };
+        this.updateGridItems();
+      });
+      return;
+    }
+
+    this.scrollToTarget = { ...position };
+    this.scrollToStart = { ...this.state.offset };
+    this.scrollToStartTime = performance.now();
+    this.animationFrame = requestAnimationFrame(this.animateScrollTo);
+  };
+
+  private animateScrollTo = () => {
+    if (!this.scrollToTarget || !this.scrollToStart) return;
+    const elapsed = performance.now() - this.scrollToStartTime;
+    const t = Math.min(elapsed / this.SCROLL_TO_DURATION, 1);
+    // Cubic ease-in-out
+    const ease = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    const offset = {
+      x: this.scrollToStart.x + (this.scrollToTarget.x - this.scrollToStart.x) * ease,
+      y: this.scrollToStart.y + (this.scrollToTarget.y - this.scrollToStart.y) * ease,
+    };
+    this.setState({ offset, velocity: { x: 0, y: 0 } }, this.debouncedUpdateGridItems);
+    if (t < 1) {
+      this.animationFrame = requestAnimationFrame(this.animateScrollTo);
+    } else {
+      this.scrollToTarget = null;
+      this.scrollToStart = null;
+      this.animationFrame = null;
+    }
   };
 
   private handleMouseDown = (e: React.MouseEvent) => {
@@ -622,10 +692,13 @@ class ThiingsGrid extends Component<ThiingsGridProps, State> {
           }}
         >
           {gridItems.map((item) => {
-            const x = item.position.x * gridSize + containerWidth / 2;
-            const y = item.position.y * gridSize + containerHeight / 2;
-            const cellWidth = gridSize * item.colSpan;
-            const cellHeight = gridSize * item.rowSpan;
+            const gap = this.effectiveGap;
+            const step = gridSize + gap;
+            const x = item.position.x * step + containerWidth / 2;
+            const y = item.position.y * step + containerHeight / 2;
+            // For spanning cells, include the gaps between the spanned cell units
+            const cellWidth = gridSize * item.colSpan + gap * (item.colSpan - 1);
+            const cellHeight = gridSize * item.rowSpan + gap * (item.rowSpan - 1);
 
             return (
               <div
