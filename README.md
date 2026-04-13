@@ -1,6 +1,6 @@
 # FlexibleThiingsGrid
 
-A high-performance, infinite scrolling grid component for React that provides smooth touch/mouse interactions with momentum-based scrolling. Perfect for displaying large datasets in a grid format with custom cell renderers.
+FlexibleThiingsGrid is a fork of [charlieclark/thiings-grid](https://github.com/charlieclark/thiings-grid) — the component that powers the infinite icon grid on Thiings.co. It keeps everything that makes the original great and adds one core capability: cells that span multiple columns and rows.
 
 ## 🪩 [**Explore Thiings.co →**](https://thiings.co)
 
